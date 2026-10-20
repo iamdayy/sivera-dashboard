@@ -102,6 +102,31 @@
       <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <h2 class="text-lg font-semibold mb-4">Jalankan Prediksi Baru</h2>
 
+        <!-- Prerequisites Status -->
+        <div v-if="prerequisitesValue" class="mb-4 p-4 rounded-lg" :class="prerequisitesValue.has_active_calibration && prerequisitesValue.has_active_ground_model ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'">
+          <h3 class="text-sm font-medium text-gray-900 mb-2">Prasyarat Prediksi</h3>
+          <div v-if="checkingPrerequisites" class="text-sm text-gray-500">Memeriksa prasyarat...</div>
+          <template v-else>
+            <div class="space-y-1 text-sm">
+              <div class="flex items-center gap-2">
+                <span :class="prerequisitesValue.has_active_calibration ? 'text-green-600' : 'text-red-600'">
+                  {{ prerequisitesValue.has_active_calibration ? '✓' : '✗' }}
+                </span>
+                <span class="text-gray-700">Kalibrasi aktif</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span :class="prerequisitesValue.has_active_ground_model ? 'text-green-600' : 'text-red-600'">
+                  {{ prerequisitesValue.has_active_ground_model ? '✓' : '✗' }}
+                </span>
+                <span class="text-gray-700">Model ground aktif</span>
+              </div>
+              <div v-if="prerequisitesValue.missing.length > 0" class="mt-2 text-sm text-red-600">
+                <span class="font-medium">Kurang: </span>{{ prerequisitesValue.missing.join(', ') }}
+              </div>
+            </div>
+          </template>
+        </div>
+
         <form @submit.prevent="submitPrediction">
           <div class="space-y-4">
             <div>
@@ -320,11 +345,11 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { listCameras as apiListCameras } from '@/services/cameras'
-import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputUrl } from '@/services/predictions'
+import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputUrl, checkPredictionPrerequisites } from '@/services/predictions'
 import { useJobPolling } from '@/composables/useJobPolling'
-import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate } from '@/types'
+import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate, PredictionPrerequisites } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -363,6 +388,13 @@ const predForm = ref({
 })
 
 const uploadedImage = ref<File | null>(null)
+
+// Prediction prerequisites
+const prerequisites = ref<PredictionPrerequisites | null>(null)
+const checkingPrerequisites = ref(false)
+
+// Computed to narrow the type for template
+const prerequisitesValue = computed(() => prerequisites.value)
 
 const fetchCameras = async () => {
   if (!apiStore.hasApiKey) return
@@ -410,9 +442,30 @@ const onCameraChange = () => {
   // Stop polling for previous camera's jobs
   stopPolling()
   fetchPredictionJobs()
+  checkPrerequisites()
 }
 
-const openCreateModal = () => {
+const checkPrerequisites = async () => {
+  if (!selectedCameraId.value) {
+    prerequisites.value = null
+    return
+  }
+  checkingPrerequisites.value = true
+  try {
+    prerequisites.value = await checkPredictionPrerequisites(selectedCameraId.value)
+  } catch (error) {
+    console.error('Failed to check prerequisites:', error)
+    prerequisites.value = {
+      has_active_calibration: false,
+      has_active_ground_model: false,
+      missing: ['Gagal memeriksa prasyarat'],
+    }
+  } finally {
+    checkingPrerequisites.value = false
+  }
+}
+
+const openCreateModal = async () => {
   predForm.value = {
     source_type: 'upload',
     seg_conf: 0.25,
@@ -422,6 +475,7 @@ const openCreateModal = () => {
   }
   uploadedImage.value = null
   isCreateModalOpen.value = true
+  await checkPrerequisites()
 }
 
 const closeCreateModal = () => {
@@ -438,6 +492,30 @@ const submitPrediction = async () => {
   if (!uploadedImage.value) {
     toast.warning('Pilih gambar untuk diunggah')
     return
+  }
+
+  // Check prerequisites before submitting
+  const pre = prerequisites.value
+  if (pre) {
+    if (!pre.has_active_calibration) {
+      toast.error('Tidak bisa menjalankan prediksi', {
+        description: 'Kamera belum memiliki kalibrasi aktif. Buat dan aktifkan kalibrasi terlebih dahulu.',
+      })
+      return
+    }
+    if (!pre.has_active_ground_model) {
+      toast.error('Tidak bisa menjalankan prediksi', {
+        description: 'Kamera belum memiliki model ground aktif. Buat referensi tanah dan aktifkan terlebih dahulu.',
+      })
+      return
+    }
+  } else {
+    // Re-check if not loaded
+    await checkPrerequisites()
+    const pre2 = prerequisites.value
+    if (pre2 && (!pre2.has_active_calibration || !pre2.has_active_ground_model)) {
+      return
+    }
   }
 
   submitting.value = true

@@ -86,3 +86,36 @@ export async function getPredictionVolumes(cameraId: string, jobId: string): Pro
     throw normalizeApiError(error)
   }
 }
+
+export interface PredictionPrerequisites {
+  has_active_calibration: boolean
+  has_active_ground_model: boolean
+  missing: string[]
+}
+
+export async function checkPredictionPrerequisites(cameraId: string): Promise<PredictionPrerequisites> {
+  const missing: string[] = []
+  
+  // Check active calibration
+  try {
+    await apiClient.get(`/cameras/${cameraId}/calibrations/active`)
+  } catch {
+    missing.push('Kalibrasi aktif')
+  }
+
+  // Check active ground model
+  try {
+    await apiClient.get(`/cameras/${cameraId}/ground-models/active`)
+  } catch {
+    missing.push('Model ground aktif')
+  }
+
+  // Note: Depth scale is created during prediction pipeline
+  // No separate API endpoint to check
+
+  return {
+    has_active_calibration: !missing.includes('Kalibrasi aktif'),
+    has_active_ground_model: !missing.includes('Model ground aktif'),
+    missing,
+  }
+}

@@ -162,3 +162,9 @@ export interface HealthStatus {
   version: string
   database: string
 }
+
+export interface PredictionPrerequisites {
+  has_active_calibration: boolean
+  has_active_ground_model: boolean
+  missing: string[]
+}
