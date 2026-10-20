@@ -110,17 +110,26 @@ const saveApiConfig = async () => {
       apiStore.clearApiKey()
     }
 
-    await apiStore.testConnection()
-    connectionSuccess.value = true
-    connectionMessage.value = 'Koneksi ke API berhasil!'
-    toast.success('Konfigurasi disimpan', {
-      description: 'Koneksi ke API berhasil!',
-    })
+    // Test API key validity (not just connectivity)
+    const keyTest = await apiStore.testApiKey()
+    if (keyTest.valid) {
+      connectionSuccess.value = true
+      connectionMessage.value = keyTest.message
+      toast.success('Konfigurasi disimpan', {
+        description: keyTest.message,
+      })
+    } else {
+      connectionSuccess.value = false
+      connectionMessage.value = keyTest.message
+      toast.error('API Key tidak valid', {
+        description: keyTest.message,
+      })
+    }
   } catch (error: unknown) {
     connectionSuccess.value = false
     const err = error as { response?: { data?: { detail?: string } }; message?: string }
-    connectionMessage.value = 'Gagal terhubung ke API: ' + (err.response?.data?.detail || err.message)
-    toast.error('Gagal terhubung ke API', {
+    connectionMessage.value = 'Gagal memvalidasi API Key: ' + (err.response?.data?.detail || err.message)
+    toast.error('Gagal memvalidasi API Key', {
       description: err.response?.data?.detail || err.message,
     })
   } finally {

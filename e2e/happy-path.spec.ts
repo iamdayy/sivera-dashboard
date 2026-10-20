@@ -61,8 +61,8 @@ test('Settings: set API key and verify connection', async ({ page }) => {
   // Click save
   await page.click('button:has-text("Simpan Konfigurasi")')
 
-  // Wait for connection test result
-  await expect(page.locator('text=Koneksi ke API berhasil!').first()).toBeVisible({ timeout: 10000 })
+  // Wait for connection test result (new API key validation)
+  await expect(page.locator('text=API Key valid dan memiliki akses').first()).toBeVisible({ timeout: 10000 })
 })
 
 test('Cameras: open page and verify structure', async ({ page }) => {
