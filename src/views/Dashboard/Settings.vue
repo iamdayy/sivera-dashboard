@@ -11,8 +11,8 @@
           <label class="block text-sm font-medium text-gray-700 mb-1">Base URL API</label>
           <input v-model="apiBaseUrl" type="text"
             class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="http://localhost:8000" />
-          <p class="mt-1 text-sm text-gray-500">URL dasar untuk mengakses API backend (tanpa prefix /api/v1)</p>
+            placeholder="http://localhost:8000/api/v1" />
+          <p class="mt-1 text-sm text-gray-500">URL dasar untuk mengakses API backend (include /api/v1 prefix)</p>
         </div>
 
         <div>
@@ -94,7 +94,9 @@ const connectionMessage = ref('')
 
 const apiDocsUrl = computed(() => {
   const base = apiBaseUrl.value.replace(/\/+$/, '')
-  return `${base}/docs`
+  // Swagger UI is served at /docs (not /api/v1/docs)
+  const docsBase = base.replace(/\/api\/v1$/, '')
+  return `${docsBase}/docs`
 })
 
 const saveApiConfig = async () => {

@@ -55,8 +55,10 @@ const apiStore = useApiStore()
 const hasApiKey = computed(() => apiStore.hasApiKey)
 
 const apiDocsUrl = computed(() => {
-  const base = (localStorage.getItem('api_base_url') || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '')
-  return `${base}/docs`
+  const base = (localStorage.getItem('api_base_url') || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/+$/, '')
+  // Swagger UI is served at /docs (not /api/v1/docs)
+  const docsBase = base.replace(/\/api\/v1$/, '')
+  return `${docsBase}/docs`
 })
 
 const logout = () => {

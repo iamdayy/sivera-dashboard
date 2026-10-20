@@ -55,7 +55,7 @@ test('Settings: set API key and verify connection', async ({ page }) => {
   await page.waitForSelector('h1:has-text("Pengaturan")', { timeout: 10000 })
 
   // Fill API Base URL
-  await page.fill('input[placeholder="http://localhost:8000"]', 'http://localhost:8000')
+  await page.fill('input[placeholder="http://localhost:8000/api/v1"]', 'http://localhost:8000/api/v1')
   // Fill API Key
   await page.fill('input[placeholder="Masukkan API Key Anda"]', API_KEY)
   // Click save

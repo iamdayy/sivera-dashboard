@@ -1,0 +1,2149 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Waste Volume Estimation API",
+    "description": "## Waste Volume Estimation API\n\nREST API for CCTV-based waste volume estimation using computer vision pipeline:\n- **Calibration**: Camera calibration from chessboard images\n- **Ground Reference**: Ground plane reference points for metric mapping\n- **Segmentation**: YOLO-seg waste detection (Sampah_Berserakan, Sampah_Overload)\n- **Depth Estimation**: Monocular depth estimation (YOLO depth)\n- **3D Lifting**: Lift waste pixels to 3D ground coordinates\n- **Volume Estimation**: Grid-based and convex hull volume calculation\n- **BEV Projection**: Bird's Eye View visualization\n\n### Authentication\nAll endpoints require an API key via the `X-API-Key` header.\nConfigure valid keys via `VALID_API_KEYS` environment variable.\n\n### Scopes\n- `camera:read` / `camera:write` - Camera management\n- `calibration:read` / `calibration:write` - Calibration\n- `ground_ref:read` / `ground_ref:write` - Ground references\n- `predict:read` / `predict:write` - Predictions\n\n### Versioning\nCalibrations and ground references are versioned per camera. Only one version can be active at a time.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/files/{path}": {
+      "get": {
+        "summary": "Serve Artefact",
+        "description": "Serve a stored artefact file with API-key authentication.",
+        "operationId": "serve_artefact_files__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Storage key path (e.g. cameras/123/outputs/abc.jpg)",
+              "title": "Path"
+            },
+            "description": "Storage key path (e.g. cameras/123/outputs/abc.jpg)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras": {
+      "post": {
+        "tags": ["cameras"],
+        "summary": "Create Camera",
+        "description": "Register a new camera.",
+        "operationId": "create_camera_cameras_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CameraCreate" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CameraResponse" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "get": {
+        "tags": ["cameras"],
+        "summary": "List Cameras",
+        "description": "List cameras with pagination.",
+        "operationId": "list_cameras_cameras_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "default": 1, "title": "Page" }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean", "default": false, "title": "Active Only" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CameraListResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}": {
+      "get": {
+        "tags": ["cameras"],
+        "summary": "Get Camera",
+        "description": "Get camera details with active calibration info.",
+        "operationId": "get_camera_cameras__camera_id__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CameraWithActiveCalib" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "patch": {
+        "tags": ["cameras"],
+        "summary": "Update Camera",
+        "description": "Update camera metadata.",
+        "operationId": "update_camera_cameras__camera_id__patch",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CameraUpdate" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CameraResponse" } }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "delete": {
+        "tags": ["cameras"],
+        "summary": "Delete Camera",
+        "description": "Delete camera (cascades to calibrations, jobs, etc.).",
+        "operationId": "delete_camera_cameras__camera_id__delete",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Successful Response" },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/calibrations": {
+      "post": {
+        "tags": ["calibrations"],
+        "summary": "Create Calibration",
+        "description": "Upload chessboard images and run calibration.\n\nRequires at least 10 valid chessboard images (recommended 15-30).\nImages should be JPG/PNG/BMP format.",
+        "operationId": "create_calibration_cameras__camera_id__calibrations_post",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_calibration_cameras__camera_id__calibrations_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "get": {
+        "tags": ["calibrations"],
+        "summary": "List Calibrations",
+        "description": "List all calibration versions for a camera.",
+        "operationId": "list_calibrations_cameras__camera_id__calibrations_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationListResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/calibrations/active": {
+      "get": {
+        "tags": ["calibrations"],
+        "summary": "Get Active Calibration",
+        "description": "Get the currently active calibration for a camera.",
+        "operationId": "get_active_calibration_cameras__camera_id__calibrations_active_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/calibrations/{calibration_id}": {
+      "get": {
+        "tags": ["calibrations"],
+        "summary": "Get Calibration",
+        "description": "Get specific calibration version.",
+        "operationId": "get_calibration_cameras__camera_id__calibrations__calibration_id__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "calibration_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Calibration Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "delete": {
+        "tags": ["calibrations"],
+        "summary": "Delete Calibration",
+        "description": "Delete a calibration version (cannot delete active).",
+        "operationId": "delete_calibration_cameras__camera_id__calibrations__calibration_id__delete",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "calibration_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Calibration Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Successful Response" },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/calibrations/{calibration_id}/activate": {
+      "post": {
+        "tags": ["calibrations"],
+        "summary": "Activate Calibration",
+        "description": "Set a calibration version as active (deactivates others).",
+        "operationId": "activate_calibration_cameras__camera_id__calibrations__calibration_id__activate_post",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "calibration_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Calibration Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationActivateResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/calibrations/{calibration_id}/undistort-preview": {
+      "get": {
+        "tags": ["calibrations"],
+        "summary": "Get Undistort Preview",
+        "description": "Get undistort preview for a calibration (uses first calibration image).",
+        "operationId": "get_undistort_preview_cameras__camera_id__calibrations__calibration_id__undistort_preview_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "calibration_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Calibration Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UndistortPreviewResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-references": {
+      "post": {
+        "tags": ["ground-references"],
+        "summary": "Create Ground Reference",
+        "description": "Submit ground reference points (image <-> world correspondences).\n\nThis computes the ground model (homography + camera pose) automatically.",
+        "operationId": "create_ground_reference_cameras__camera_id__ground_references_post",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_ground_reference_cameras__camera_id__ground_references_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundReferenceResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "get": {
+        "tags": ["ground-references"],
+        "summary": "List Ground References",
+        "description": "List all ground reference versions for a camera.",
+        "operationId": "list_ground_references_cameras__camera_id__ground_references_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundReferenceListResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-references/active": {
+      "get": {
+        "tags": ["ground-references"],
+        "summary": "Get Active Ground Reference",
+        "description": "Get the currently active ground reference for a camera.",
+        "operationId": "get_active_ground_reference_cameras__camera_id__ground_references_active_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundReferenceResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-references/{ground_ref_id}": {
+      "get": {
+        "tags": ["ground-references"],
+        "summary": "Get Ground Reference",
+        "description": "Get specific ground reference version.",
+        "operationId": "get_ground_reference_cameras__camera_id__ground_references__ground_ref_id__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "ground_ref_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Ground Ref Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundReferenceResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-references/{ground_ref_id}/activate": {
+      "post": {
+        "tags": ["ground-references"],
+        "summary": "Activate Ground Reference",
+        "description": "Set a ground reference version as active (deactivates others).",
+        "operationId": "activate_ground_reference_cameras__camera_id__ground_references__ground_ref_id__activate_post",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "ground_ref_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Ground Ref Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundReferenceResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-models/active": {
+      "get": {
+        "tags": ["ground-models"],
+        "summary": "Get Active Ground Model",
+        "description": "Get the ground model associated with active ground reference.",
+        "operationId": "get_active_ground_model_cameras__camera_id__ground_models_active_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundModelResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-models/{ground_model_id}": {
+      "get": {
+        "tags": ["ground-models"],
+        "summary": "Get Ground Model",
+        "description": "Get specific ground model.",
+        "operationId": "get_ground_model_cameras__camera_id__ground_models__ground_model_id__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "ground_model_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Ground Model Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GroundModelResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/ground-models/{ground_model_id}/bev-preview": {
+      "get": {
+        "tags": ["ground-models"],
+        "summary": "Get Bev Preview",
+        "description": "Generate BEV preview for a ground model.",
+        "operationId": "get_bev_preview_cameras__camera_id__ground_models__ground_model_id__bev_preview_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "ground_model_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Ground Model Id" }
+          },
+          {
+            "name": "test_image_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "description": "Path to test image (optional)",
+              "title": "Test Image Path"
+            },
+            "description": "Path to test image (optional)"
+          },
+          {
+            "name": "mask_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "description": "Path to mask image (optional)",
+              "title": "Mask Path"
+            },
+            "description": "Path to mask image (optional)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BEVPreviewResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict": {
+      "post": {
+        "tags": ["predictions"],
+        "summary": "Submit Prediction",
+        "description": "Submit a prediction job.\n\nFor source_type=\"upload\", a file must be provided.\nFor source_type=\"rtsp_frame\" or \"latest_rtsp\", the system will fetch from camera RTSP.",
+        "operationId": "submit_prediction_cameras__camera_id__predict_post",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_submit_prediction_cameras__camera_id__predict_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionJobSubmitResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      },
+      "get": {
+        "tags": ["predictions"],
+        "summary": "List Prediction Jobs",
+        "description": "List prediction jobs for a camera.",
+        "operationId": "list_prediction_jobs_cameras__camera_id__predict_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Status" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "default": 1, "title": "Page" }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionJobListResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict/{job_id}": {
+      "get": {
+        "tags": ["predictions"],
+        "summary": "Get Prediction Job",
+        "description": "Get prediction job status and result.",
+        "operationId": "get_prediction_job_cameras__camera_id__predict__job_id__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Job Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionJobResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict/{job_id}/outputs": {
+      "get": {
+        "tags": ["predictions"],
+        "summary": "Get Prediction Outputs",
+        "description": "List all output files for a prediction job.",
+        "operationId": "get_prediction_outputs_cameras__camera_id__predict__job_id__outputs_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Job Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionOutputsResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict/{job_id}/outputs/{output_type}": {
+      "get": {
+        "tags": ["predictions"],
+        "summary": "Download Prediction Output",
+        "description": "Download a specific output file.",
+        "operationId": "download_prediction_output_cameras__camera_id__predict__job_id__outputs__output_type__get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Job Id" }
+          },
+          {
+            "name": "output_type",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "title": "Output Type" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict/{job_id}/instances": {
+      "get": {
+        "tags": ["predictions"],
+        "summary": "Get Prediction Instances",
+        "description": "Get detected instances for a prediction job.",
+        "operationId": "get_prediction_instances_cameras__camera_id__predict__job_id__instances_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Job Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DetectedInstanceResponse" },
+                  "title": "Response Get Prediction Instances Cameras  Camera Id  Predict  Job Id  Instances Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/cameras/{camera_id}/predict/{job_id}/volumes": {
+      "get": {
+        "tags": ["predictions"],
+        "summary": "Get Prediction Volumes",
+        "description": "Get volume estimates for a prediction job.",
+        "operationId": "get_prediction_volumes_cameras__camera_id__predict__job_id__volumes_get",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Camera Id" }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "Job Id" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "title": "X-Api-Key" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/VolumeEstimateResponse" },
+                  "title": "Response Get Prediction Volumes Cameras  Camera Id  Predict  Job Id  Volumes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.\n\nProbes the database connection honestly instead of reporting connected\nunconditionally. Never exposes internal error details to the client.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "description": "Root endpoint.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "ApiKeyAuth": [] }]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BEVPreviewResponse": {
+        "properties": {
+          "bev_image_url": { "type": "string", "title": "Bev Image Url" },
+          "bev_mask_url": { "type": "string", "title": "Bev Mask Url" },
+          "bev_overlay_url": { "type": "string", "title": "Bev Overlay Url" },
+          "bev_info": { "type": "object", "title": "Bev Info" }
+        },
+        "type": "object",
+        "required": ["bev_image_url", "bev_mask_url", "bev_overlay_url", "bev_info"],
+        "title": "BEVPreviewResponse"
+      },
+      "Body_create_calibration_cameras__camera_id__calibrations_post": {
+        "properties": {
+          "chessboard_cols": { "type": "integer", "title": "Chessboard Cols", "default": 9 },
+          "chessboard_rows": { "type": "integer", "title": "Chessboard Rows", "default": 6 },
+          "square_m": { "type": "number", "title": "Square M", "default": 0.025 },
+          "alpha": { "type": "number", "title": "Alpha", "default": 0.0 },
+          "notes": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Notes" },
+          "files": {
+            "items": { "type": "string", "format": "binary" },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": ["files"],
+        "title": "Body_create_calibration_cameras__camera_id__calibrations_post"
+      },
+      "Body_create_ground_reference_cameras__camera_id__ground_references_post": {
+        "properties": {
+          "image_points": { "type": "string", "title": "Image Points" },
+          "world_points": { "type": "string", "title": "World Points" },
+          "world_units": { "type": "string", "title": "World Units", "default": "meter" },
+          "description": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": ["image_points", "world_points"],
+        "title": "Body_create_ground_reference_cameras__camera_id__ground_references_post"
+      },
+      "Body_submit_prediction_cameras__camera_id__predict_post": {
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "pattern": "^(upload|rtsp_frame|latest_rtsp)$",
+            "title": "Source Type"
+          },
+          "timestamp": {
+            "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+            "title": "Timestamp"
+          },
+          "seg_model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Seg Model"
+          },
+          "seg_conf": { "type": "number", "title": "Seg Conf", "default": 0.25 },
+          "seg_classes": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Seg Classes"
+          },
+          "volume_cell_m": { "type": "number", "title": "Volume Cell M", "default": 0.05 },
+          "volume_min_pts_per_cell": {
+            "type": "integer",
+            "title": "Volume Min Pts Per Cell",
+            "default": 2
+          },
+          "return_outputs": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Return Outputs"
+          },
+          "file": {
+            "anyOf": [{ "type": "string", "format": "binary" }, { "type": "null" }],
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": ["source_type"],
+        "title": "Body_submit_prediction_cameras__camera_id__predict_post"
+      },
+      "CalibrationActivateResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "camera_id": { "type": "string", "format": "uuid", "title": "Camera Id" },
+          "version": { "type": "integer", "title": "Version" },
+          "is_active": { "type": "boolean", "title": "Is Active" },
+          "message": { "type": "string", "title": "Message" }
+        },
+        "type": "object",
+        "required": ["id", "camera_id", "version", "is_active", "message"],
+        "title": "CalibrationActivateResponse"
+      },
+      "CalibrationListResponse": {
+        "properties": {
+          "items": {
+            "items": { "$ref": "#/components/schemas/CalibrationResponse" },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": { "type": "integer", "title": "Total" }
+        },
+        "type": "object",
+        "required": ["items", "total"],
+        "title": "CalibrationListResponse"
+      },
+      "CalibrationResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "camera_id": { "type": "string", "format": "uuid", "title": "Camera Id" },
+          "version": { "type": "integer", "title": "Version" },
+          "k_matrix": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "K Matrix"
+          },
+          "dist_coeffs": { "items": { "type": "number" }, "type": "array", "title": "Dist Coeffs" },
+          "rms_reproj": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Rms Reproj"
+          },
+          "coverage_w": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Coverage W"
+          },
+          "coverage_h": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Coverage H"
+          },
+          "chessboard_cols": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Chessboard Cols"
+          },
+          "chessboard_rows": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Chessboard Rows"
+          },
+          "square_m": { "anyOf": [{ "type": "number" }, { "type": "null" }], "title": "Square M" },
+          "calib_images": {
+            "anyOf": [{ "items": { "type": "string" }, "type": "array" }, { "type": "null" }],
+            "title": "Calib Images"
+          },
+          "notes": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Notes" },
+          "is_active": { "type": "boolean", "title": "Is Active" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "camera_id",
+          "version",
+          "k_matrix",
+          "dist_coeffs",
+          "rms_reproj",
+          "coverage_w",
+          "coverage_h",
+          "chessboard_cols",
+          "chessboard_rows",
+          "square_m",
+          "calib_images",
+          "notes",
+          "is_active",
+          "created_at"
+        ],
+        "title": "CalibrationResponse"
+      },
+      "CameraCreate": {
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "minLength": 1, "title": "Name" },
+          "rtsp_url": {
+            "anyOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }],
+            "title": "Rtsp Url"
+          },
+          "latitude": {
+            "anyOf": [{ "type": "number", "maximum": 90.0, "minimum": -90.0 }, { "type": "null" }],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              { "type": "number", "maximum": 180.0, "minimum": -180.0 },
+              { "type": "null" }
+            ],
+            "title": "Longitude"
+          },
+          "resolution_w": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution W"
+          },
+          "resolution_h": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution H"
+          },
+          "fps": {
+            "type": "integer",
+            "maximum": 120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Fps",
+            "default": 25
+          },
+          "roi_polygon": {
+            "anyOf": [
+              { "items": { "items": { "type": "number" }, "type": "array" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Roi Polygon"
+          },
+          "metadata": { "type": "object", "title": "Metadata" }
+        },
+        "type": "object",
+        "required": ["name", "resolution_w", "resolution_h"],
+        "title": "CameraCreate"
+      },
+      "CameraListResponse": {
+        "properties": {
+          "items": {
+            "items": { "$ref": "#/components/schemas/CameraResponse" },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": { "type": "integer", "title": "Total" },
+          "page": { "type": "integer", "title": "Page" },
+          "page_size": { "type": "integer", "title": "Page Size" },
+          "total_pages": { "type": "integer", "title": "Total Pages" }
+        },
+        "type": "object",
+        "required": ["items", "total", "page", "page_size", "total_pages"],
+        "title": "CameraListResponse"
+      },
+      "CameraResponse": {
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "minLength": 1, "title": "Name" },
+          "rtsp_url": {
+            "anyOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }],
+            "title": "Rtsp Url"
+          },
+          "latitude": {
+            "anyOf": [{ "type": "number", "maximum": 90.0, "minimum": -90.0 }, { "type": "null" }],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              { "type": "number", "maximum": 180.0, "minimum": -180.0 },
+              { "type": "null" }
+            ],
+            "title": "Longitude"
+          },
+          "resolution_w": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution W"
+          },
+          "resolution_h": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution H"
+          },
+          "fps": {
+            "type": "integer",
+            "maximum": 120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Fps",
+            "default": 25
+          },
+          "roi_polygon": {
+            "anyOf": [
+              { "items": { "items": { "type": "number" }, "type": "array" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Roi Polygon"
+          },
+          "metadata": { "type": "object", "title": "Metadata" },
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" },
+          "updated_at": { "type": "string", "format": "date-time", "title": "Updated At" }
+        },
+        "type": "object",
+        "required": ["name", "resolution_w", "resolution_h", "id", "created_at", "updated_at"],
+        "title": "CameraResponse"
+      },
+      "CameraUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [{ "type": "string", "maxLength": 100, "minLength": 1 }, { "type": "null" }],
+            "title": "Name"
+          },
+          "rtsp_url": {
+            "anyOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }],
+            "title": "Rtsp Url"
+          },
+          "latitude": {
+            "anyOf": [{ "type": "number", "maximum": 90.0, "minimum": -90.0 }, { "type": "null" }],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              { "type": "number", "maximum": 180.0, "minimum": -180.0 },
+              { "type": "null" }
+            ],
+            "title": "Longitude"
+          },
+          "resolution_w": {
+            "anyOf": [
+              { "type": "integer", "maximum": 10000.0, "exclusiveMinimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Resolution W"
+          },
+          "resolution_h": {
+            "anyOf": [
+              { "type": "integer", "maximum": 10000.0, "exclusiveMinimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Resolution H"
+          },
+          "fps": {
+            "anyOf": [
+              { "type": "integer", "maximum": 120.0, "exclusiveMinimum": 0.0 },
+              { "type": "null" }
+            ],
+            "title": "Fps"
+          },
+          "roi_polygon": {
+            "anyOf": [
+              { "items": { "items": { "type": "number" }, "type": "array" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Roi Polygon"
+          },
+          "metadata": { "anyOf": [{ "type": "object" }, { "type": "null" }], "title": "Metadata" }
+        },
+        "type": "object",
+        "title": "CameraUpdate"
+      },
+      "CameraWithActiveCalib": {
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "minLength": 1, "title": "Name" },
+          "rtsp_url": {
+            "anyOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }],
+            "title": "Rtsp Url"
+          },
+          "latitude": {
+            "anyOf": [{ "type": "number", "maximum": 90.0, "minimum": -90.0 }, { "type": "null" }],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              { "type": "number", "maximum": 180.0, "minimum": -180.0 },
+              { "type": "null" }
+            ],
+            "title": "Longitude"
+          },
+          "resolution_w": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution W"
+          },
+          "resolution_h": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution H"
+          },
+          "fps": {
+            "type": "integer",
+            "maximum": 120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Fps",
+            "default": 25
+          },
+          "roi_polygon": {
+            "anyOf": [
+              { "items": { "items": { "type": "number" }, "type": "array" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Roi Polygon"
+          },
+          "metadata": { "type": "object", "title": "Metadata" },
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" },
+          "updated_at": { "type": "string", "format": "date-time", "title": "Updated At" },
+          "active_calibration_id": {
+            "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }],
+            "title": "Active Calibration Id"
+          },
+          "active_calibration_version": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Active Calibration Version"
+          },
+          "active_calibration_rms": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Active Calibration Rms"
+          }
+        },
+        "type": "object",
+        "required": ["name", "resolution_w", "resolution_h", "id", "created_at", "updated_at"],
+        "title": "CameraWithActiveCalib"
+      },
+      "DetectedInstanceResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "job_id": { "type": "string", "format": "uuid", "title": "Job Id" },
+          "cls_name": { "type": "string", "title": "Cls Name" },
+          "confidence": { "type": "number", "title": "Confidence" },
+          "polygon_px": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "Polygon Px"
+          },
+          "polygon_world": {
+            "anyOf": [
+              { "items": { "items": { "type": "number" }, "type": "array" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Polygon World"
+          },
+          "volume_m3": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Volume M3"
+          },
+          "footprint_m2": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Footprint M2"
+          },
+          "height_mean_m": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Height Mean M"
+          },
+          "height_max_m": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Height Max M"
+          },
+          "n_pixels": { "type": "integer", "title": "N Pixels" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "cls_name",
+          "confidence",
+          "polygon_px",
+          "polygon_world",
+          "volume_m3",
+          "footprint_m2",
+          "height_mean_m",
+          "height_max_m",
+          "n_pixels",
+          "created_at"
+        ],
+        "title": "DetectedInstanceResponse"
+      },
+      "GroundModelResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "camera_id": { "type": "string", "format": "uuid", "title": "Camera Id" },
+          "calibration_id": { "type": "string", "format": "uuid", "title": "Calibration Id" },
+          "ground_ref_id": { "type": "string", "format": "uuid", "title": "Ground Ref Id" },
+          "R_matrix": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "R Matrix"
+          },
+          "t_vector": { "items": { "type": "number" }, "type": "array", "title": "T Vector" },
+          "H_i2w": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "H I2W"
+          },
+          "H_w2i": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "H W2I"
+          },
+          "cam_height": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Cam Height"
+          },
+          "pitch_down_deg": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Pitch Down Deg"
+          },
+          "reproj_err_px": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Reproj Err Px"
+          },
+          "bev_ppm": { "type": "integer", "title": "Bev Ppm" },
+          "bev_margin_m": { "type": "number", "title": "Bev Margin M" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "camera_id",
+          "calibration_id",
+          "ground_ref_id",
+          "R_matrix",
+          "t_vector",
+          "H_i2w",
+          "H_w2i",
+          "cam_height",
+          "pitch_down_deg",
+          "reproj_err_px",
+          "bev_ppm",
+          "bev_margin_m",
+          "created_at"
+        ],
+        "title": "GroundModelResponse"
+      },
+      "GroundReferenceListResponse": {
+        "properties": {
+          "items": {
+            "items": { "$ref": "#/components/schemas/GroundReferenceResponse" },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": { "type": "integer", "title": "Total" }
+        },
+        "type": "object",
+        "required": ["items", "total"],
+        "title": "GroundReferenceListResponse"
+      },
+      "GroundReferenceResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "camera_id": { "type": "string", "format": "uuid", "title": "Camera Id" },
+          "calibration_id": { "type": "string", "format": "uuid", "title": "Calibration Id" },
+          "version": { "type": "integer", "title": "Version" },
+          "image_points": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "Image Points"
+          },
+          "world_points": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "World Points"
+          },
+          "world_units": { "type": "string", "title": "World Units" },
+          "description": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Description"
+          },
+          "is_active": { "type": "boolean", "title": "Is Active" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "camera_id",
+          "calibration_id",
+          "version",
+          "image_points",
+          "world_points",
+          "world_units",
+          "description",
+          "is_active",
+          "created_at"
+        ],
+        "title": "GroundReferenceResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": { "$ref": "#/components/schemas/ValidationError" },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PredictionJobListResponse": {
+        "properties": {
+          "items": {
+            "items": { "$ref": "#/components/schemas/PredictionJobResponse" },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": { "type": "integer", "title": "Total" },
+          "page": { "type": "integer", "title": "Page" },
+          "page_size": { "type": "integer", "title": "Page Size" },
+          "total_pages": { "type": "integer", "title": "Total Pages" }
+        },
+        "type": "object",
+        "required": ["items", "total", "page", "page_size", "total_pages"],
+        "title": "PredictionJobListResponse"
+      },
+      "PredictionJobResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "camera_id": { "type": "string", "format": "uuid", "title": "Camera Id" },
+          "calibration_id": { "type": "string", "format": "uuid", "title": "Calibration Id" },
+          "ground_model_id": { "type": "string", "format": "uuid", "title": "Ground Model Id" },
+          "depth_scale_id": { "type": "string", "format": "uuid", "title": "Depth Scale Id" },
+          "status": { "type": "string", "title": "Status" },
+          "source_type": { "type": "string", "title": "Source Type" },
+          "source_path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Source Path"
+          },
+          "source_ts": {
+            "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+            "title": "Source Ts"
+          },
+          "seg_model": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Seg Model"
+          },
+          "seg_conf": { "type": "number", "title": "Seg Conf" },
+          "seg_classes": {
+            "anyOf": [{ "items": { "type": "string" }, "type": "array" }, { "type": "null" }],
+            "title": "Seg Classes"
+          },
+          "result": { "anyOf": [{ "type": "object" }, { "type": "null" }], "title": "Result" },
+          "error_msg": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Error Msg"
+          },
+          "started_at": {
+            "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+            "title": "Completed At"
+          },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "camera_id",
+          "calibration_id",
+          "ground_model_id",
+          "depth_scale_id",
+          "status",
+          "source_type",
+          "source_path",
+          "source_ts",
+          "seg_model",
+          "seg_conf",
+          "seg_classes",
+          "result",
+          "error_msg",
+          "started_at",
+          "completed_at",
+          "created_at"
+        ],
+        "title": "PredictionJobResponse"
+      },
+      "PredictionJobSubmitResponse": {
+        "properties": {
+          "job_id": { "type": "string", "format": "uuid", "title": "Job Id" },
+          "status": { "type": "string", "title": "Status" },
+          "message": { "type": "string", "title": "Message" },
+          "estimated_duration_sec": {
+            "type": "integer",
+            "title": "Estimated Duration Sec",
+            "default": 30
+          }
+        },
+        "type": "object",
+        "required": ["job_id", "status", "message"],
+        "title": "PredictionJobSubmitResponse"
+      },
+      "PredictionOutputResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "job_id": { "type": "string", "format": "uuid", "title": "Job Id" },
+          "output_type": { "type": "string", "title": "Output Type" },
+          "file_path": { "type": "string", "title": "File Path" },
+          "mime_type": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Mime Type"
+          },
+          "width": { "anyOf": [{ "type": "integer" }, { "type": "null" }], "title": "Width" },
+          "height": { "anyOf": [{ "type": "integer" }, { "type": "null" }], "title": "Height" },
+          "meta": { "anyOf": [{ "type": "object" }, { "type": "null" }], "title": "Meta" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "output_type",
+          "file_path",
+          "mime_type",
+          "width",
+          "height",
+          "meta",
+          "created_at"
+        ],
+        "title": "PredictionOutputResponse"
+      },
+      "PredictionOutputsResponse": {
+        "properties": {
+          "outputs": {
+            "items": { "$ref": "#/components/schemas/PredictionOutputResponse" },
+            "type": "array",
+            "title": "Outputs"
+          }
+        },
+        "type": "object",
+        "required": ["outputs"],
+        "title": "PredictionOutputsResponse"
+      },
+      "UndistortPreviewResponse": {
+        "properties": {
+          "preview_url": { "type": "string", "title": "Preview Url" },
+          "original_size": {
+            "items": { "type": "integer" },
+            "type": "array",
+            "title": "Original Size"
+          },
+          "undistorted_size": {
+            "items": { "type": "integer" },
+            "type": "array",
+            "title": "Undistorted Size"
+          },
+          "k_undist": {
+            "items": { "items": { "type": "number" }, "type": "array" },
+            "type": "array",
+            "title": "K Undist"
+          }
+        },
+        "type": "object",
+        "required": ["preview_url", "original_size", "undistorted_size", "k_undist"],
+        "title": "UndistortPreviewResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": { "type": "string", "title": "Message" },
+          "type": { "type": "string", "title": "Error Type" }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      },
+      "VolumeEstimateResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "job_id": { "type": "string", "format": "uuid", "title": "Job Id" },
+          "method": { "type": "string", "title": "Method" },
+          "volume_m3": { "type": "number", "title": "Volume M3" },
+          "volume_liter": { "type": "number", "title": "Volume Liter" },
+          "footprint_m2": { "type": "number", "title": "Footprint M2" },
+          "cell_m": { "anyOf": [{ "type": "number" }, { "type": "null" }], "title": "Cell M" },
+          "height_mean_m": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Height Mean M"
+          },
+          "height_median_m": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Height Median M"
+          },
+          "n_cells": { "anyOf": [{ "type": "integer" }, { "type": "null" }], "title": "N Cells" },
+          "n_points": { "anyOf": [{ "type": "integer" }, { "type": "null" }], "title": "N Points" },
+          "created_at": { "type": "string", "format": "date-time", "title": "Created At" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "method",
+          "volume_m3",
+          "volume_liter",
+          "footprint_m2",
+          "cell_m",
+          "height_mean_m",
+          "height_median_m",
+          "n_cells",
+          "n_points",
+          "created_at"
+        ],
+        "title": "VolumeEstimateResponse"
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key for authentication. Set via VALID_API_KEYS env var."
+      }
+    }
+  },
+  "tags": [
+    { "name": "cameras", "description": "Camera registry and management" },
+    { "name": "calibrations", "description": "Camera calibration from chessboard images" },
+    { "name": "ground-references", "description": "Ground plane reference points and homography" },
+    { "name": "ground-models", "description": "Computed ground models and BEV preview" },
+    { "name": "predictions", "description": "Waste detection, depth, volume estimation" }
+  ]
+}
