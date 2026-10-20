@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-bold text-gray-900">Prediksi Volume Sampah</h1>
-      <Button @click="openModal" variant="primary" :disabled="!selectedCameraId">
+      <Button @click="openCreateModal" variant="primary" :disabled="!selectedCameraId">
         Jalankan Prediksi Baru
       </Button>
     </div>
@@ -30,8 +30,7 @@
             <tr>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job ID</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sumber</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model Segmen
-              </th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model Segmen</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dibuat</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selesai</th>
@@ -69,14 +68,13 @@
                     :disabled="job.status === 'processing'">
                     Detail
                   </Button>
-                  <Button variant="ghost" size="sm" @click="viewOutputs(job.id)" :disabled="job.status !== 'completed'">
+                  <Button variant="ghost" size="sm" @click="viewOutputs(job.id)" :disabled="job.status !== 'done'">
                     Output
                   </Button>
-                  <Button variant="ghost" size="sm" @click="viewInstances(job.id)"
-                    :disabled="job.status !== 'completed'">
+                  <Button variant="ghost" size="sm" @click="viewInstances(job.id)" :disabled="job.status !== 'done'">
                     Instance
                   </Button>
-                  <Button variant="ghost" size="sm" @click="viewVolumes(job.id)" :disabled="job.status !== 'completed'">
+                  <Button variant="ghost" size="sm" @click="viewVolumes(job.id)" :disabled="job.status !== 'done'">
                     Volume
                   </Button>
                   <Button variant="ghost" size="sm" @click="deleteJob(job.id)"
@@ -102,8 +100,8 @@
     </Card>
 
     <!-- Create Prediction Modal -->
-    <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeModal()" />
+    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
       <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <h2 class="text-lg font-semibold mb-4">Jalankan Prediksi Baru</h2>
 
@@ -114,9 +112,12 @@
               <select v-model="predForm.source_type"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
                 <option value="upload">Upload Gambar</option>
-                <option value="rtsp_frame">Ambil Frame dari RTSP</option>
-                <option value="latest_rtsp">Ambil Frame Terbaru dari RTSP</option>
+                <option value="rtsp_frame" disabled>Ambil Frame dari RTSP (belum didukung)</option>
+                <option value="latest_rtsp" disabled>Ambil Frame Terbaru dari RTSP (belum didukung)</option>
               </select>
+              <p v-if="predForm.source_type !== 'upload'" class="mt-1 text-xs text-amber-600">
+                Backend belum mengimplementasikan sumber RTSP. Gunakan Upload Gambar.
+              </p>
             </div>
 
             <div v-if="predForm.source_type === 'upload'">
@@ -174,7 +175,7 @@
           </div>
 
           <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeModal">Batal</Button>
+            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
             <Button type="submit" variant="primary" :isLoading="submitting">
               {{ submitting ? 'Memproses...' : 'Jalankan Prediksi' }}
             </Button>
@@ -204,8 +205,8 @@
           <div>
             <p class="text-sm text-gray-500">Status</p>
             <p><span :class="getStatusClass(selectedJob.status)"
-                class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">{{ formatStatus(selectedJob.status)
-                }}</span></p>
+                class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">{{ formatStatus(selectedJob.status) }}
+              </span></p>
           </div>
           <div>
             <p class="text-sm text-gray-500">Sumber</p>
@@ -246,12 +247,12 @@
 <script setup lang="ts">
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
-import { useModal } from '@/composables/useModal'
 import { useToast } from '@/composables/useToast'
-import { apiClient } from '@/services/api'
 import { useApiStore } from '@/stores/api'
-import type { Camera, PredictionJob } from '@/types'
 import { onMounted, ref } from 'vue'
+import { listCameras as apiListCameras } from '@/services/cameras'
+import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes } from '@/services/predictions'
+import type { Camera, PredictionJob } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -260,10 +261,9 @@ const cameras = ref<Camera[]>([])
 const predictionJobs = ref<PredictionJob[]>([])
 const selectedCameraId = ref('')
 const loading = ref(false)
-const { isOpen, openModal, closeModal: closeModalFromComposable } = useModal()
-
 const submitting = ref(false)
 const selectedJob = ref<PredictionJob | null>(null)
+const isCreateModalOpen = ref(false)
 
 const predForm = ref({
   source_type: 'upload',
@@ -276,10 +276,10 @@ const predForm = ref({
 const uploadedImage = ref<File | null>(null)
 
 const fetchCameras = async () => {
-  if (!apiStore.isAuthenticated) return
+  if (!apiStore.hasApiKey) return
   try {
-    const response = await apiClient.get('/cameras')
-    cameras.value = response.data.items || response.data || []
+    const response = await apiListCameras()
+    cameras.value = response.items
     if (cameras.value.length > 0 && !selectedCameraId.value) {
       selectedCameraId.value = cameras.value[0]!.id
     }
@@ -290,11 +290,11 @@ const fetchCameras = async () => {
 }
 
 const fetchPredictionJobs = async () => {
-  if (!selectedCameraId.value || !apiStore.isAuthenticated) return
+  if (!selectedCameraId.value || !apiStore.hasApiKey) return
   loading.value = true
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/predict`)
-    predictionJobs.value = response.data || []
+    const response = await apiListPredictionJobs(selectedCameraId.value)
+    predictionJobs.value = response.items
   } catch (error) {
     console.error('Failed to fetch prediction jobs:', error)
     toast.error('Gagal memuat data prediksi')
@@ -311,34 +311,49 @@ const handleImageUpload = (event: Event) => {
   }
 }
 
+const openCreateModal = () => {
+  predForm.value = {
+    source_type: 'upload',
+    seg_conf: 0.25,
+    volume_cell_m: 0.05,
+    volume_min_pts_per_cell: 2,
+    return_outputs: ['segmentation', 'bev', 'volume', 'instances'],
+  }
+  uploadedImage.value = null
+  isCreateModalOpen.value = true
+}
+
+const closeCreateModal = () => {
+  isCreateModalOpen.value = false
+}
+
 const submitPrediction = async () => {
   if (!selectedCameraId.value) return
 
-  const formData = new FormData()
-  formData.append('source_type', predForm.value.source_type)
-  formData.append('seg_conf', predForm.value.seg_conf.toString())
-  formData.append('volume_cell_m', predForm.value.volume_cell_m.toString())
-  formData.append('volume_min_pts_per_cell', predForm.value.volume_min_pts_per_cell.toString())
-  formData.append('return_outputs', JSON.stringify(predForm.value.return_outputs))
-
-  if (predForm.value.source_type === 'upload' && uploadedImage.value) {
-    formData.append('file', uploadedImage.value)
+  if (predForm.value.source_type !== 'upload') {
+    toast.warning('Hanya tipe sumber Upload Gambar yang didukung saat ini')
+    return
+  }
+  if (!uploadedImage.value) {
+    toast.warning('Pilih gambar untuk diunggah')
+    return
   }
 
   submitting.value = true
   try {
-    const response = await apiClient.post(
-      `/cameras/${selectedCameraId.value}/predict`,
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      }
-    )
+    const result = await apiSubmitPrediction(selectedCameraId.value, {
+      source_type: predForm.value.source_type,
+      seg_conf: predForm.value.seg_conf,
+      volume_cell_m: predForm.value.volume_cell_m,
+      volume_min_pts_per_cell: predForm.value.volume_min_pts_per_cell,
+      return_outputs: predForm.value.return_outputs,
+      file: uploadedImage.value,
+    })
 
     toast.success('Prediksi berhasil dikirim', {
-      description: `Job ID: ${response.data.job_id}`,
+      description: `Job ID: ${result.job_id}`,
     })
-    closeModal()
+    closeCreateModal()
     await fetchPredictionJobs()
   } catch (error: unknown) {
     console.error('Failed to submit prediction:', error)
@@ -351,22 +366,10 @@ const submitPrediction = async () => {
   }
 }
 
-const closeModal = () => {
-  showCreateModal.value = false
-  predForm.value = {
-    source_type: 'upload',
-    seg_conf: 0.25,
-    volume_cell_m: 0.05,
-    volume_min_pts_per_cell: 2,
-    return_outputs: ['segmentation', 'bev', 'volume', 'instances'],
-  }
-  uploadedImage.value = null
-}
-
 const viewJobDetails = async (jobId: string) => {
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/predict/${jobId}`)
-    selectedJob.value = response.data
+    const job = await apiGetPredictionJob(selectedCameraId.value, jobId)
+    selectedJob.value = job
   } catch (error) {
     console.error('Failed to fetch job details:', error)
     toast.error('Gagal memuat detail job')
@@ -375,9 +378,10 @@ const viewJobDetails = async (jobId: string) => {
 
 const viewOutputs = async (jobId: string) => {
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/predict/${jobId}/outputs`)
+    const outputs = await apiListPredictionOutputs(selectedCameraId.value, jobId)
+    // For now, show in toast - will be replaced with gallery in P2
     toast.info('Outputs', {
-      description: JSON.stringify(response.data, null, 2),
+      description: outputs.map(o => `${o.output_type} (${o.mime_type})`).join(', ') || 'Tidak ada output',
     })
   } catch (error) {
     console.error('Failed to fetch outputs:', error)
@@ -387,9 +391,9 @@ const viewOutputs = async (jobId: string) => {
 
 const viewInstances = async (jobId: string) => {
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/predict/${jobId}/instances`)
+    const instances = await apiGetPredictionInstances(selectedCameraId.value, jobId)
     toast.info('Instances', {
-      description: JSON.stringify(response.data, null, 2),
+      description: instances.map(i => `${i.cls_name} ${(i.confidence * 100).toFixed(0)}% vol=${i.volume_m3?.toFixed(3) ?? '?'}m³`).join('; ') || 'Tidak ada instance',
     })
   } catch (error) {
     console.error('Failed to fetch instances:', error)
@@ -399,9 +403,9 @@ const viewInstances = async (jobId: string) => {
 
 const viewVolumes = async (jobId: string) => {
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/predict/${jobId}/volumes`)
+    const volumes = await apiGetPredictionVolumes(selectedCameraId.value, jobId)
     toast.info('Volumes', {
-      description: JSON.stringify(response.data, null, 2),
+      description: volumes.map(v => `${v.method}: ${v.volume_m3.toFixed(3)}m³ (${v.volume_liter.toFixed(0)}L)`).join('; ') || 'Tidak ada volume',
     })
   } catch (error) {
     console.error('Failed to fetch volumes:', error)
@@ -411,8 +415,7 @@ const viewVolumes = async (jobId: string) => {
 
 const deleteJob = async (jobId: string) => {
   if (confirm('Apakah Anda yakin ingin menghapus job prediksi ini?')) {
-    // TODO: Implement delete prediction job API
-    toast.warning('Fitur hapus job prediksi belum diimplementasikan')
+    toast.warning('Hapus job prediksi belum tersedia di API')
   }
 }
 
@@ -442,7 +445,7 @@ const getStatusClass = (status: string) => {
   const classes: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
     processing: 'bg-blue-100 text-blue-700',
-    completed: 'bg-green-100 text-green-700',
+    done: 'bg-green-100 text-green-700',
     failed: 'bg-red-100 text-red-700',
   }
   return classes[status] || 'bg-gray-100 text-gray-700'
@@ -452,7 +455,7 @@ const formatStatus = (status: string) => {
   const labels: Record<string, string> = {
     pending: 'Menunggu',
     processing: 'Memproses',
-    completed: 'Selesai',
+    done: 'Selesai',
     failed: 'Gagal',
   }
   return labels[status] || status
@@ -477,7 +480,7 @@ const formatBytes = (bytes: number) => {
 }
 
 onMounted(async () => {
-  if (apiStore.isAuthenticated) {
+  if (apiStore.hasApiKey) {
     await fetchCameras()
   }
 })

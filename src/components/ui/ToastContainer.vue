@@ -27,17 +27,3 @@
 import { Toaster } from 'vue-sonner';
 import 'vue-sonner/style.css';
 </script>
-
-<style scoped>
-:root {
-    --toast-bg: #ffffff;
-    --toast-color: #1f2937;
-    --toast-border: #e5e7eb;
-}
-
-.dark {
-    --toast-bg: #1f2937;
-    --toast-color: #f9fafb;
-    --toast-border: #374151;
-}
-</style>

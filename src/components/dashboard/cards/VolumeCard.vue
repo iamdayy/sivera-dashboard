@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow p-4">
+  <div class="rounded-lg border border-gray-200 bg-white shadow-sm p-4" v-if="volumeEstimate">
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
@@ -18,11 +18,11 @@
           <p class="text-xs text-gray-500">Footprint (m²)</p>
         </div>
         <div class="text-center">
-          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.height_mean_m?.toFixed(2) || '0' }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.height_mean_m?.toFixed(2) ?? '—' }}</p>
           <p class="text-xs text-gray-500">Tinggi Rata (m)</p>
         </div>
         <div class="text-center">
-          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.n_cells || '0' }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.n_cells ?? '—' }}</p>
           <p class="text-xs text-gray-500">Grid Cells</p>
         </div>
       </div>
@@ -35,24 +35,18 @@
       </div>
     </div>
   </div>
+  <div v-else class="rounded-lg border border-gray-200 bg-white shadow-sm p-4 text-center text-gray-500">
+    Belum ada data volume. Jalankan prediksi untuk melihat estimasi.
+  </div>
 </template>
 
 <script setup lang="ts">
+import type { VolumeEstimate } from '@/types'
 
 const props = defineProps({
   volumeEstimate: {
-    type: Object,
-    default: () => ({
-      id: 'vol-001',
-      volume_m3: 2.5,
-      volume_liter: 2500,
-      footprint_m2: 10.2,
-      height_mean_m: 0.24,
-      height_median_m: 0.22,
-      n_cells: 156,
-      method: 'grid',
-      created_at: new Date().toISOString()
-    })
+    type: Object as () => VolumeEstimate | null,
+    default: null,
   }
 })
 

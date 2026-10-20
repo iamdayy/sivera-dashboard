@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-bold text-gray-900">Manajemen Kalibrasi</h1>
-      <Button @click="openModal" variant="primary" :disabled="!selectedCameraId">
+      <Button @click="openCreateModal" variant="primary" :disabled="!selectedCameraId">
         Buat Kalibrasi Baru
       </Button>
     </div>
@@ -29,11 +29,9 @@
           <thead class="bg-gray-50">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Versi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RMS
-                Reprojection</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RMS Reprojection</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chessboard</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Square Size
-              </th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Square Size</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dibuat</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
@@ -91,8 +89,8 @@
     </Card>
 
     <!-- Create Calibration Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeModal" />
+    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
       <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <h2 class="text-lg font-semibold mb-4">Buat Kalibrasi Baru</h2>
 
@@ -147,7 +145,7 @@
           </div>
 
           <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeModal">Batal</Button>
+            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
             <Button type="submit" variant="primary" :isLoading="saving">
               Buat Kalibrasi
             </Button>
@@ -161,15 +159,14 @@
 <script setup lang="ts">
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
-import { useModal } from '@/composables/useModal'
 import { useToast } from '@/composables/useToast'
-import { apiClient } from '@/services/api'
 import { useApiStore } from '@/stores/api'
 import { onMounted, ref } from 'vue'
+import { createCalibration as apiCreateCalibration, listCalibrations as apiListCalibrations, activateCalibration as apiActivateCalibration, getUndistortPreview as apiGetUndistortPreview, deleteCalibration as apiDeleteCalibration } from '@/services/calibrations'
+import { listCameras } from '@/services/cameras'
 
 const apiStore = useApiStore()
 const toast = useToast()
-const { isOpen, openModal, closeModal } = useModal()
 
 import type { Calibration, Camera } from '@/types'
 
@@ -178,6 +175,7 @@ const calibrations = ref<Calibration[]>([])
 const selectedCameraId = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const isCreateModalOpen = ref(false)
 
 const calibForm = ref({
   chessboard_cols: 9,
@@ -190,11 +188,10 @@ const calibForm = ref({
 const uploadedFiles = ref<File[]>([])
 
 const fetchCameras = async () => {
-  if (!apiStore.isAuthenticated) return
+  if (!apiStore.hasApiKey) return
   try {
-    const response = await apiClient.get('/cameras')
-    cameras.value = response.data.items || response.data || []
-    // Auto-select first camera if available
+    const response = await listCameras()
+    cameras.value = response.items
     if (cameras.value.length > 0 && !selectedCameraId.value) {
       selectedCameraId.value = cameras.value[0]!.id
     }
@@ -205,11 +202,11 @@ const fetchCameras = async () => {
 }
 
 const fetchCalibrations = async () => {
-  if (!selectedCameraId.value || !apiStore.isAuthenticated) return
+  if (!selectedCameraId.value || !apiStore.hasApiKey) return
   loading.value = true
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/calibrations`)
-    calibrations.value = response.data.items || response.data || []
+    const response = await apiListCalibrations(selectedCameraId.value)
+    calibrations.value = response.items
   } catch (error) {
     console.error('Failed to fetch calibrations:', error)
     toast.error('Gagal memuat data kalibrasi')
@@ -224,6 +221,22 @@ const handleFileUpload = (event: Event) => {
   uploadedFiles.value = files
 }
 
+const openCreateModal = () => {
+  calibForm.value = {
+    chessboard_cols: 9,
+    chessboard_rows: 6,
+    square_m: 0.025,
+    alpha: 0.0,
+    notes: '',
+  }
+  uploadedFiles.value = []
+  isCreateModalOpen.value = true
+}
+
+const closeCreateModal = () => {
+  isCreateModalOpen.value = false
+}
+
 const saveCalibration = async () => {
   if (!selectedCameraId.value) return
   if (uploadedFiles.value.length < 10) {
@@ -233,28 +246,17 @@ const saveCalibration = async () => {
 
   saving.value = true
   try {
-    const formData = new FormData()
-    formData.append('chessboard_cols', calibForm.value.chessboard_cols.toString())
-    formData.append('chessboard_rows', calibForm.value.chessboard_rows.toString())
-    formData.append('square_m', calibForm.value.square_m.toString())
-    formData.append('alpha', calibForm.value.alpha.toString())
-    if (calibForm.value.notes) {
-      formData.append('notes', calibForm.value.notes)
-    }
-    uploadedFiles.value.forEach(file => {
-      formData.append('files', file)
+    await apiCreateCalibration(selectedCameraId.value, {
+      chessboard_cols: calibForm.value.chessboard_cols,
+      chessboard_rows: calibForm.value.chessboard_rows,
+      square_m: calibForm.value.square_m,
+      alpha: calibForm.value.alpha,
+      notes: calibForm.value.notes || undefined,
+      files: uploadedFiles.value,
     })
 
-    await apiClient.post(
-      `/cameras/${selectedCameraId.value}/calibrations`,
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      }
-    )
-
     toast.success('Kalibrasi berhasil dibuat')
-    closeModal()
+    closeCreateModal()
     await fetchCalibrations()
   } catch (error: unknown) {
     console.error('Failed to create calibration:', error)
@@ -267,23 +269,9 @@ const saveCalibration = async () => {
   }
 }
 
-const closeModal = () => {
-  showCreateModal.value = false
-  calibForm.value = {
-    chessboard_cols: 9,
-    chessboard_rows: 6,
-    square_m: 0.025,
-    alpha: 0.0,
-    notes: '',
-  }
-  uploadedFiles.value = []
-}
-
 const activateCalibration = async (calibId: string) => {
   try {
-    await apiClient.post(
-      `/cameras/${selectedCameraId.value}/calibrations/${calibId}/activate`
-    )
+    await apiActivateCalibration(selectedCameraId.value, calibId)
     toast.success('Kalibrasi berhasil diaktifkan')
     await fetchCalibrations()
   } catch (error) {
@@ -292,17 +280,26 @@ const activateCalibration = async (calibId: string) => {
   }
 }
 
-const viewPreview = (calibId: string) => {
-  // TODO: Implement preview functionality
-  toast.info('Preview kalibrasi', {
-    description: `Preview untuk kalibrasi: ${calibId}`,
-  })
+const viewPreview = async (calibId: string) => {
+  try {
+    const url = await apiGetUndistortPreview(selectedCameraId.value, calibId)
+    window.open(url, '_blank')
+  } catch (error) {
+    console.error('Failed to get preview:', error)
+    toast.error('Gagal memuat preview kalibrasi')
+  }
 }
 
 const deleteCalibration = async (calibId: string) => {
   if (confirm('Apakah Anda yakin ingin menghapus kalibrasi ini?')) {
-    // TODO: Implement delete calibration API
-    toast.warning('Fitur hapus kalibrasi belum diimplementasikan')
+    try {
+      await apiDeleteCalibration(selectedCameraId.value, calibId)
+      toast.success('Kalibrasi berhasil dihapus')
+      await fetchCalibrations()
+    } catch (error) {
+      console.error('Failed to delete calibration:', error)
+      toast.error('Gagal menghapus kalibrasi')
+    }
   }
 }
 
@@ -317,7 +314,7 @@ const formatDate = (dateString: string) => {
 }
 
 onMounted(async () => {
-  if (apiStore.isAuthenticated) {
+  if (apiStore.hasApiKey) {
     await fetchCameras()
   }
 })

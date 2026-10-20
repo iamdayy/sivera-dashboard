@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow p-4">
+  <div class="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
     <div class="flex items-center justify-between">
       <div>
         <h3 class="font-medium text-gray-900">Kalibrasi v{{ calibration.version }}</h3>
@@ -14,33 +14,26 @@
         </div>
       </div>
       <div class="flex items-center space-x-2">
-        <button v-if="!calibration.is_active" @click="activateCalibration"
-          class="px-2 py-1 text-sm font-medium text-primary hover:text-primary/80">
+        <Button v-if="!calibration.is_active" variant="ghost" size="sm" @click="$emit('activate', calibration)">
           Aktifkan
-        </button>
+        </Button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useToast } from '@/composables/useToast';
-import { useRouter } from 'vue-router';
+import Button from '@/components/ui/Button.vue'
+import type { Calibration } from '@/types'
 
 const props = defineProps({
   calibration: {
-    type: Object,
+    type: Object as () => Calibration,
     required: true
   }
 })
 
-const router = useRouter()
-const toast = useToast()
-
-const activateCalibration = () => {
-  // TODO: Implement activate calibration API call
-  toast.info('Aktifkan kalibrasi', {
-    description: `ID: ${props.calibration.id}`,
-  })
-}
+const emit = defineEmits<{
+  activate: [calibration: Calibration]
+}>()
 </script>

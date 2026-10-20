@@ -13,65 +13,61 @@
 
     <main class="flex-1">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div class="grid gap-8">
-          <div class="col-span-1">
+        <div class="grid gap-8 md:grid-cols-2">
+          <div>
             <div class="rounded-lg border bg-white p-6 shadow-sm">
               <h2 class="text-lg font-medium leading-6 text-gray-900">
                 Selamat Datang
               </h2>
               <p class="mt-4 text-sm text-gray-500">
-                Gunakan dashboard untuk mengelola camera, kalibrasi, referensi tanah,
-                dan menjalankan prediksi volume sampah.
+                Sivera Dashboard adalah antarmuka untuk mengelola kamera CCTV, menjalankan kalibrasi kamera,
+                menentukan referensi tanah, dan memprediksi volume sampah menggunakan computer vision.
               </p>
+              <div class="mt-6">
+                <router-link to="/dashboard" class="inline-flex items-center px-4 py-2 bg-primary text-white rounded-md text-sm font-medium hover:bg-primary-hover transition-colors">
+                  Buka Dashboard
+                </router-link>
+              </div>
             </div>
           </div>
 
-          <div class="col-span-1">
+          <div>
             <div class="rounded-lg border bg-white p-6 shadow-sm">
               <h2 class="text-lg font-medium leading-6 text-gray-900">
                 Fitur Utama
               </h2>
-              <ul class="mt-4 space-y-2 text-sm text-gray-500">
-                <li class="flex items-start">
-                  <div class="flex-shrink-0">
-                    <span class="ltr:mr-2.5 rtl:ml-2.5 ltr:ml-2 rtl:mr-2">
-                      <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fill-rule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clip-rule="evenodd" />
-                      </svg>
-                    </span>
+              <ul class="mt-4 space-y-3 text-sm text-gray-500">
+                <li class="flex items-start gap-3">
+                  <div class="flex-shrink-0 mt-0.5">
+                    <svg class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
                   </div>
-                  <div class="min-w-0 break-words">
-                    <p class="font-medium text-gray-900">Manajemen Camera</p>
+                  <div>
+                    <p class="font-medium text-gray-900">Manajemen Kamera</p>
+                    <p class="text-xs text-gray-400">Daftar, edit, dan pantau status kalibrasi kamera CCTV.</p>
                   </div>
                 </li>
-                <li class="flex items-start">
-                  <div class="flex-shrink-0">
-                    <span class="ltr:mr-2.5 rtl:ml-2.5 ltr:ml-2 rtl:mr-2">
-                      <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fill-rule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l2-2a1 1 0 00-1.414-1.414l-1.293 1.293zm2.586 6.414a1 1 0 01-1.414 0l-1-1a1 1 0 10-1.414 1.414l1.293 1.293a1 1 0 001.414 1.414l1.293-1.293a1 1 0 011.414 0z"
-                          clip-rule="evenodd" />
-                      </svg>
-                    </span>
+                <li class="flex items-start gap-3">
+                  <div class="flex-shrink-0 mt-0.5">
+                    <svg class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
                   </div>
-                  <div class="min-w-0 break-words">
-                    <p class="font-medium text-gray-900">Kalibrasi Otomatis</p>
+                  <div>
+                    <p class="font-medium text-gray-900">Kalibrasi Kamera</p>
+                    <p class="text-xs text-gray-400">Upload gambar chessboard, hitung parameter intrinsik, aktifkan versi terbaik.</p>
                   </div>
                 </li>
-                <li class="flex items-start">
-                  <div class="flex-shrink-0">
-                    <span class="ltr:mr-2.5 rtl:ml-2.5 ltr:ml-2 rtl:mr-2">
-                      <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fill-rule="evenodd"
-                          d="M3 10a7 7 0 1114 0H3zM13 9a1 1 0 11-2 0 1 1 0 012 0zm-1 5a1 1 0 10-2 0v2h2v-2zM6.75 7.5a.75.75 0 00-1.5 0v2.06l-1.018-.51a.75.75 0 00-.96.96l.51 1.018a.75.75 0 001.102 0l1.018-.51-.51-1.018a.75.75 0 00-.96-.96V7.5z"
-                          clip-rule="evenodd" />
-                      </svg>
-                    </span>
+                <li class="flex items-start gap-3">
+                  <div class="flex-shrink-0 mt-0.5">
+                    <svg class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1h5V6a4 4 0 00-8 0v1h5v6a4 4 0 108 0V7h5V6a4 4 0 00-4-4z" clip-rule="evenodd" />
+                    </svg>
                   </div>
-                  <div class="min-w-0 break-words">
+                  <div>
                     <p class="font-medium text-gray-900">Prediksi Volume Sampah</p>
+                    <p class="text-xs text-gray-400">Segmentasi, estimasi kedalaman, proyeksi BEV, dan perhitungan volume (grid & convex hull).</p>
                   </div>
                 </li>
               </ul>
@@ -83,8 +79,8 @@
 
     <footer class="bg-white border-t">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <p class="text-sm text-gray-500">
-          &copy; <span id="year"></span> Sivera Dashboard. All rights reserved.
+        <p class="text-sm text-gray-500 text-center">
+          &copy; {{ currentYear }} Sivera Dashboard. Hak cipta dilindungi.
         </p>
       </div>
     </footer>
@@ -92,11 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
-onMounted(() => {
-  const yearSpan = document.getElementById('year')
-  if (yearSpan) {
-    yearSpan.textContent = new Date().getFullYear().toString()
-  }
-})
+import { onMounted, ref } from 'vue'
+
+const currentYear = ref(new Date().getFullYear())
 </script>

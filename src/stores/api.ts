@@ -1,52 +1,40 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import apiClient from '../services/api'
+import { computed, ref } from 'vue'
+import { checkHealth } from '@/services/api'
+import type { HealthStatus } from '@/types'
+
+export type ConnectionStatus = 'idle' | 'checking' | 'ok' | 'error'
 
 export const useApiStore = defineStore('api', () => {
-    const isAuthenticated = ref(false)
-    const apiKey = ref('')
-    const apiBaseUrl = ref(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1')
+  // Key hanya dari input pengguna; tidak pernah ada fallback bawaan.
+  const apiKey = ref<string | null>(localStorage.getItem('api_key'))
+  const hasApiKey = computed(() => Boolean(apiKey.value))
+  const isAuthenticated = computed(() => Boolean(apiKey.value))
+  const connectionStatus = ref<ConnectionStatus>('idle')
 
-    const setApiKey = (key: string) => {
-        apiKey.value = key
-        isAuthenticated.value = !!key
-        localStorage.setItem('api_key', key)
+  function setApiKey(key: string): void {
+    apiKey.value = key
+    localStorage.setItem('api_key', key)
+  }
+
+  function clearApiKey(): void {
+    apiKey.value = null
+    localStorage.removeItem('api_key')
+    connectionStatus.value = 'idle'
+  }
+
+  // /health tanpa auth: hanya membuktikan konektivitas, bukan validitas key.
+  async function testConnection(): Promise<HealthStatus> {
+    connectionStatus.value = 'checking'
+    try {
+      const health = await checkHealth()
+      connectionStatus.value = 'ok'
+      return health
+    } catch (error) {
+      connectionStatus.value = 'error'
+      throw error
     }
+  }
 
-    const clearApiKey = () => {
-        apiKey.value = ''
-        isAuthenticated.value = false
-        localStorage.removeItem('api_key')
-    }
-
-    const testConnection = async () => {
-        try {
-            const response = await apiClient.get('/health')
-            isAuthenticated.value = true
-            return response.data
-        } catch (error) {
-            isAuthenticated.value = false
-            throw error
-        }
-    }
-
-    // Initialize from localStorage on load
-    const init = () => {
-        const savedKey = localStorage.getItem('api_key')
-        if (savedKey) {
-            apiKey.value = savedKey
-            isAuthenticated.value = true
-        }
-    }
-
-    init()
-
-    return {
-        isAuthenticated,
-        apiKey,
-        apiBaseUrl,
-        setApiKey,
-        clearApiKey,
-        testConnection,
-    }
+  return { apiKey, hasApiKey, isAuthenticated, connectionStatus, setApiKey, clearApiKey, testConnection }
 })

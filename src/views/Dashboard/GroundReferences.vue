@@ -1,8 +1,8 @@
 <template>
   <div class="space-y-6">
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">Referensi Tanah (Ground References)</h1>
-      <Button @click="showCreateModal = true" variant="primary" :disabled="!selectedCameraId">
+      <h1 class="text-2xl font-bold text-gray-900">Referensi Tanah</h1>
+      <Button @click="openCreateModal" variant="primary" :disabled="!selectedCameraId">
         Tambah Referensi Baru
       </Button>
     </div>
@@ -29,8 +29,7 @@
           <thead class="bg-gray-50">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Versi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jumlah Titik
-              </th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jumlah Titik</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Satuan</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deskripsi</th>
@@ -68,10 +67,6 @@
                   <Button variant="ghost" size="sm" @click="viewBevPreview(ref.id)">
                     BEV Preview
                   </Button>
-                  <Button variant="ghost" size="sm" @click="deleteReference(ref.id)"
-                    class="text-destructive hover:text-destructive/80">
-                    Hapus
-                  </Button>
                 </div>
               </td>
             </tr>
@@ -91,19 +86,13 @@
     </Card>
 
     <!-- Create Ground Reference Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeModal" />
+    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
       <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <h2 class="text-lg font-semibold mb-4">Tambah Referensi Tanah Baru</h2>
 
         <form @submit.prevent="saveGroundReference">
           <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah Titik</label>
-              <input v-model="refForm.num_points" type="number" required min="4" max="20"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-            </div>
-
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Satuan Dunia</label>
               <select v-model="refForm.world_units"
@@ -142,7 +131,7 @@
           </div>
 
           <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeModal">Batal</Button>
+            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
             <Button type="submit" variant="primary" :isLoading="saving">
               Simpan Referensi
             </Button>
@@ -157,10 +146,11 @@
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import { useToast } from '@/composables/useToast'
-import { apiClient } from '@/services/api'
 import { useApiStore } from '@/stores/api'
-import type { Camera, GroundReference } from '@/types'
 import { onMounted, ref } from 'vue'
+import { listCameras } from '@/services/cameras'
+import { listGroundReferences, createGroundReference as apiCreateGroundReference, activateGroundReference as apiActivateGroundReference, getActiveGroundModel as apiGetActiveGroundModel, getBEVPreview as apiGetBEVPreview } from '@/services/groundReferences'
+import type { Camera, GroundReference } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -169,11 +159,10 @@ const cameras = ref<Camera[]>([])
 const groundReferences = ref<GroundReference[]>([])
 const selectedCameraId = ref('')
 const loading = ref(false)
-const showCreateModal = ref(false)
+const isCreateModalOpen = ref(false)
 const saving = ref(false)
 
 const refForm = ref({
-  num_points: 4,
   world_units: 'meter',
   description: '',
   image_points_json: '',
@@ -181,31 +170,45 @@ const refForm = ref({
 })
 
 const fetchCameras = async () => {
-  if (!apiStore.isAuthenticated) return
+  if (!apiStore.hasApiKey) return
   try {
-    const response = await apiClient.get('/cameras')
-    cameras.value = response.data.items || response.data || []
+    const response = await listCameras()
+    cameras.value = response.items
     if (cameras.value.length > 0 && !selectedCameraId.value) {
       selectedCameraId.value = cameras.value[0]!.id
     }
   } catch (error) {
     console.error('Failed to fetch cameras:', error)
-    toast.error('Gagal memuat data camera')
+    toast.error('Gagal memuat data kamera')
   }
 }
 
 const fetchGroundReferences = async () => {
-  if (!selectedCameraId.value || !apiStore.isAuthenticated) return
+  if (!selectedCameraId.value || !apiStore.hasApiKey) return
   loading.value = true
   try {
-    const response = await apiClient.get(`/cameras/${selectedCameraId.value}/ground-references`)
-    groundReferences.value = response.data.items || response.data || []
+    const response = await listGroundReferences(selectedCameraId.value)
+    groundReferences.value = response.items
   } catch (error) {
     console.error('Failed to fetch ground references:', error)
     toast.error('Gagal memuat data referensi tanah')
   } finally {
     loading.value = false
   }
+}
+
+const openCreateModal = () => {
+  refForm.value = {
+    world_units: 'meter',
+    description: '',
+    image_points_json: '',
+    world_points_json: '',
+  }
+  isCreateModalOpen.value = true
+}
+
+const closeCreateModal = () => {
+  isCreateModalOpen.value = false
 }
 
 const saveGroundReference = async () => {
@@ -232,17 +235,14 @@ const saveGroundReference = async () => {
 
   saving.value = true
   try {
-    await apiClient.post(
-      `/cameras/${selectedCameraId.value}/ground-references`,
-      {
-        image_points: JSON.stringify(imagePoints),
-        world_points: JSON.stringify(worldPoints),
-        world_units: refForm.value.world_units,
-        description: refForm.value.description,
-      }
-    )
+    await apiCreateGroundReference(selectedCameraId.value, {
+      image_points: imagePoints,
+      world_points: worldPoints,
+      world_units: refForm.value.world_units as 'meter' | 'metre',
+      description: refForm.value.description || undefined,
+    })
     toast.success('Referensi tanah berhasil dibuat')
-    closeModal()
+    closeCreateModal()
     await fetchGroundReferences()
   } catch (error: unknown) {
     console.error('Failed to create ground reference:', error)
@@ -255,22 +255,9 @@ const saveGroundReference = async () => {
   }
 }
 
-const closeModal = () => {
-  showCreateModal.value = false
-  refForm.value = {
-    num_points: 4,
-    world_units: 'meter',
-    description: '',
-    image_points_json: '',
-    world_points_json: '',
-  }
-}
-
 const activateReference = async (refId: string) => {
   try {
-    await apiClient.post(
-      `/cameras/${selectedCameraId.value}/ground-references/${refId}/activate`
-    )
+    await apiActivateGroundReference(selectedCameraId.value, refId)
     toast.success('Referensi tanah berhasil diaktifkan')
     await fetchGroundReferences()
   } catch (error) {
@@ -279,22 +266,27 @@ const activateReference = async (refId: string) => {
   }
 }
 
-const viewGroundModel = (refId: string) => {
-  toast.info('Model Ground', {
-    description: `Lihat ground model untuk referensi: ${refId}`,
-  })
+const viewGroundModel = async (refId: string) => {
+  try {
+    const model = await apiGetActiveGroundModel(selectedCameraId.value)
+    toast.info('Model Ground Aktif', {
+      description: `ID: ${model.id}, Versi: ${model.ground_ref_id}`,
+    })
+  } catch (error) {
+    console.error('Failed to get ground model:', error)
+    toast.error('Gagal memuat ground model')
+  }
 }
 
-const viewBevPreview = (refId: string) => {
-  toast.info('BEV Preview', {
-    description: `Lihat BEV preview untuk referensi: ${refId}`,
-  })
-}
-
-const deleteReference = async (refId: string) => {
-  if (confirm('Apakah Anda yakin ingin menghapus referensi tanah ini?')) {
-    // TODO: Implement delete ground reference API
-    toast.warning('Fitur hapus referensi tanah belum diimplementasikan')
+const viewBevPreview = async (refId: string) => {
+  try {
+    const preview = await apiGetBEVPreview(selectedCameraId.value, refId)
+    toast.info('BEV Preview tersedia', {
+      description: `Buka: ${preview.bev_image_url}`,
+    })
+  } catch (error) {
+    console.error('Failed to get BEV preview:', error)
+    toast.error('Gagal memuat BEV preview')
   }
 }
 
@@ -309,7 +301,7 @@ const formatDate = (dateString: string) => {
 }
 
 onMounted(async () => {
-  if (apiStore.isAuthenticated) {
+  if (apiStore.hasApiKey) {
     await fetchCameras()
   }
 })
