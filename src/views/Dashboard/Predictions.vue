@@ -10,7 +10,7 @@
     <!-- Camera Selector -->
     <Card class="p-4">
       <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Camera</label>
-      <select v-model="selectedCameraId" @change="fetchPredictionJobs"
+      <select v-model="selectedCameraId" @change="onCameraChange"
         class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
         <option value="">-- Pilih Camera --</option>
         <option v-for="cam in cameras" :key="cam.id" :value="cam.id">
@@ -51,9 +51,15 @@
                 {{ job.seg_model || 'default' }}
               </td>
               <td class="px-4 py-4">
-                <span :class="getStatusClass(job.status)"
-                  class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">
-                  {{ formatStatus(job.status) }}
+                <span :class="getStatusClass(displayStatus(job))"
+                  class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full">
+                  <span v-if="isPolling(job.camera_id, job.id)" class="animate-spin">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </span>
+                  {{ formatStatus(displayStatus(job)) }}
                 </span>
               </td>
               <td class="px-4 py-4 text-sm text-gray-500">
@@ -252,6 +258,7 @@ import { useApiStore } from '@/stores/api'
 import { onMounted, ref } from 'vue'
 import { listCameras as apiListCameras } from '@/services/cameras'
 import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes } from '@/services/predictions'
+import { useJobPolling } from '@/composables/useJobPolling'
 import type { Camera, PredictionJob } from '@/types'
 
 const apiStore = useApiStore()
@@ -264,6 +271,17 @@ const loading = ref(false)
 const submitting = ref(false)
 const selectedJob = ref<PredictionJob | null>(null)
 const isCreateModalOpen = ref(false)
+
+// Job polling
+const { startPolling, isPolling, getPollingStatus, stopPolling } = useJobPolling(
+  apiGetPredictionJob,
+  async (updatedJob) => {
+    toast.success('Prediksi selesai', {
+      description: `Job ${updatedJob.id.substring(0, 8)}... ${updatedJob.status === 'done' ? 'berhasil' : 'gagal'}`,
+    })
+    await fetchPredictionJobs()
+  }
+)
 
 const predForm = ref({
   source_type: 'upload',
@@ -295,6 +313,12 @@ const fetchPredictionJobs = async () => {
   try {
     const response = await apiListPredictionJobs(selectedCameraId.value)
     predictionJobs.value = response.items
+    // Start polling for jobs that are still in progress
+    for (const job of response.items) {
+      if (job.status === 'pending' || job.status === 'processing') {
+        startPolling(selectedCameraId.value, job.id)
+      }
+    }
   } catch (error) {
     console.error('Failed to fetch prediction jobs:', error)
     toast.error('Gagal memuat data prediksi')
@@ -309,6 +333,12 @@ const handleImageUpload = (event: Event) => {
   if (file) {
     uploadedImage.value = file
   }
+}
+
+const onCameraChange = () => {
+  // Stop polling for previous camera's jobs
+  stopPolling()
+  fetchPredictionJobs()
 }
 
 const openCreateModal = () => {
@@ -355,6 +385,8 @@ const submitPrediction = async () => {
     })
     closeCreateModal()
     await fetchPredictionJobs()
+    // Start polling for the new job
+    startPolling(selectedCameraId.value, result.job_id)
   } catch (error: unknown) {
     console.error('Failed to submit prediction:', error)
     const err = error as { response?: { data?: { detail?: string } }; message?: string }
@@ -370,6 +402,10 @@ const viewJobDetails = async (jobId: string) => {
   try {
     const job = await apiGetPredictionJob(selectedCameraId.value, jobId)
     selectedJob.value = job
+    // Start polling if job is still in progress
+    if (job.status === 'pending' || job.status === 'processing') {
+      startPolling(selectedCameraId.value, jobId)
+    }
   } catch (error) {
     console.error('Failed to fetch job details:', error)
     toast.error('Gagal memuat detail job')
@@ -477,6 +513,11 @@ const formatBytes = (bytes: number) => {
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const displayStatus = (job: PredictionJob) => {
+  const pollingStatus = getPollingStatus(job.camera_id, job.id)
+  return pollingStatus ?? job.status
 }
 
 onMounted(async () => {
