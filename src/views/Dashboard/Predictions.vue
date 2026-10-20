@@ -74,15 +74,6 @@
                     :disabled="job.status === 'processing'">
                     Detail
                   </Button>
-                  <Button variant="ghost" size="sm" @click="viewOutputs(job.id)" :disabled="job.status !== 'done'">
-                    Output
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="viewInstances(job.id)" :disabled="job.status !== 'done'">
-                    Instance
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="viewVolumes(job.id)" :disabled="job.status !== 'done'">
-                    Volume
-                  </Button>
                   <Button variant="ghost" size="sm" @click="deleteJob(job.id)"
                     class="text-destructive hover:text-destructive/80">
                     Hapus
@@ -190,10 +181,10 @@
       </div>
     </div>
 
-    <!-- Job Detail Modal -->
+    <!-- Job Detail Modal with Gallery -->
     <div v-if="selectedJob" class="fixed inset-0 z-50 flex items-center justify-center">
       <div class="fixed inset-0 bg-black/50" @click="closeJobDetail" />
-      <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+      <div class="relative bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-semibold">Detail Job Prediksi</h2>
           <Button variant="ghost" @click="closeJobDetail">
@@ -203,7 +194,8 @@
           </Button>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mb-4">
+        <!-- Job Metadata -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
           <div>
             <p class="text-sm text-gray-500">Job ID</p>
             <p class="font-mono text-sm">{{ selectedJob.id }}</p>
@@ -240,10 +232,83 @@
           </div>
         </div>
 
-        <div v-if="selectedJob.result" class="border-t pt-4">
-          <h3 class="text-sm font-medium text-gray-900 mb-2">Hasil</h3>
-          <pre
-            class="bg-gray-100 p-4 rounded text-xs overflow-auto max-h-64">{{ JSON.stringify(selectedJob.result, null, 2) }}</pre>
+        <!-- Image Gallery -->
+        <div v-if="jobOutputs.length > 0" class="border-t pt-6 mb-6">
+          <h3 class="text-sm font-medium text-gray-900 mb-4">Output Gambar</h3>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div v-for="output in jobOutputs" :key="output.id" class="border border-gray-200 rounded-lg overflow-hidden">
+              <div class="aspect-video bg-gray-100 relative">
+                <img v-if="output.mime_type?.startsWith('image/')" :src="getOutputUrl(selectedJob.camera_id, selectedJob.id, output.output_type)" :alt="output.output_type" class="w-full h-full object-cover" @error="handleImageError(output)" />
+                <div v-else class="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                  {{ output.output_type }} ({{ output.mime_type }})
+                </div>
+              </div>
+              <div class="p-2 bg-gray-50">
+                <p class="text-xs font-medium text-gray-900 truncate">{{ formatOutputType(output.output_type) }}</p>
+                <p class="text-xs text-gray-500">{{ output.width }}x{{ output.height }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Instance Table -->
+        <div v-if="jobInstances.length > 0" class="border-t pt-6 mb-6">
+          <h3 class="text-sm font-medium text-gray-900 mb-4">Instance Terdeteksi</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (m³)</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Footprint (m²)</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi Rata (m)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200">
+                <tr v-for="inst in jobInstances" :key="inst.id" class="hover:bg-gray-50">
+                  <td class="px-3 py-2 font-medium text-gray-900">{{ inst.cls_name }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ (inst.confidence * 100).toFixed(1) }}%</td>
+                  <td class="px-3 py-2 text-gray-700">{{ inst.volume_m3?.toFixed(3) ?? '—' }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ inst.footprint_m2?.toFixed(3) ?? '—' }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ inst.height_mean_m?.toFixed(3) ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Volume Table -->
+        <div v-if="jobVolumes.length > 0" class="border-t pt-6">
+          <h3 class="text-sm font-medium text-gray-900 mb-4">Estimasi Volume</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metode</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (m³)</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (L)</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cell Size (m)</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grid Cells</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titik</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200">
+                <tr v-for="vol in jobVolumes" :key="vol.id" class="hover:bg-gray-50">
+                  <td class="px-3 py-2 font-medium text-gray-900">{{ vol.method }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ vol.volume_m3.toFixed(3) }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ vol.volume_liter.toFixed(0) }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ vol.cell_m?.toFixed(3) ?? '—' }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ vol.n_cells ?? '—' }}</td>
+                  <td class="px-3 py-2 text-gray-700">{{ vol.n_points ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div v-if="jobOutputs.length === 0 && jobInstances.length === 0 && jobVolumes.length === 0" class="text-center text-gray-500 py-8">
+          Belum ada output untuk job ini.
         </div>
       </div>
     </div>
@@ -257,9 +322,9 @@ import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
 import { onMounted, ref } from 'vue'
 import { listCameras as apiListCameras } from '@/services/cameras'
-import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes } from '@/services/predictions'
+import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputUrl } from '@/services/predictions'
 import { useJobPolling } from '@/composables/useJobPolling'
-import type { Camera, PredictionJob } from '@/types'
+import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -271,6 +336,12 @@ const loading = ref(false)
 const submitting = ref(false)
 const selectedJob = ref<PredictionJob | null>(null)
 const isCreateModalOpen = ref(false)
+
+// Job detail data
+const jobOutputs = ref<PredictionOutput[]>([])
+const jobInstances = ref<DetectedInstance[]>([])
+const jobVolumes = ref<VolumeEstimate[]>([])
+const loadingJobDetail = ref(false)
 
 // Job polling
 const { startPolling, isPolling, getPollingStatus, stopPolling } = useJobPolling(
@@ -400,8 +471,17 @@ const submitPrediction = async () => {
 
 const viewJobDetails = async (jobId: string) => {
   try {
-    const job = await apiGetPredictionJob(selectedCameraId.value, jobId)
+    loadingJobDetail.value = true
+    const [job, outputs, instances, volumes] = await Promise.all([
+      apiGetPredictionJob(selectedCameraId.value, jobId),
+      apiListPredictionOutputs(selectedCameraId.value, jobId),
+      apiGetPredictionInstances(selectedCameraId.value, jobId),
+      apiGetPredictionVolumes(selectedCameraId.value, jobId),
+    ])
     selectedJob.value = job
+    jobOutputs.value = outputs
+    jobInstances.value = instances
+    jobVolumes.value = volumes
     // Start polling if job is still in progress
     if (job.status === 'pending' || job.status === 'processing') {
       startPolling(selectedCameraId.value, jobId)
@@ -409,43 +489,8 @@ const viewJobDetails = async (jobId: string) => {
   } catch (error) {
     console.error('Failed to fetch job details:', error)
     toast.error('Gagal memuat detail job')
-  }
-}
-
-const viewOutputs = async (jobId: string) => {
-  try {
-    const outputs = await apiListPredictionOutputs(selectedCameraId.value, jobId)
-    // For now, show in toast - will be replaced with gallery in P2
-    toast.info('Outputs', {
-      description: outputs.map(o => `${o.output_type} (${o.mime_type})`).join(', ') || 'Tidak ada output',
-    })
-  } catch (error) {
-    console.error('Failed to fetch outputs:', error)
-    toast.error('Gagal memuat outputs')
-  }
-}
-
-const viewInstances = async (jobId: string) => {
-  try {
-    const instances = await apiGetPredictionInstances(selectedCameraId.value, jobId)
-    toast.info('Instances', {
-      description: instances.map(i => `${i.cls_name} ${(i.confidence * 100).toFixed(0)}% vol=${i.volume_m3?.toFixed(3) ?? '?'}m³`).join('; ') || 'Tidak ada instance',
-    })
-  } catch (error) {
-    console.error('Failed to fetch instances:', error)
-    toast.error('Gagal memuat instances')
-  }
-}
-
-const viewVolumes = async (jobId: string) => {
-  try {
-    const volumes = await apiGetPredictionVolumes(selectedCameraId.value, jobId)
-    toast.info('Volumes', {
-      description: volumes.map(v => `${v.method}: ${v.volume_m3.toFixed(3)}m³ (${v.volume_liter.toFixed(0)}L)`).join('; ') || 'Tidak ada volume',
-    })
-  } catch (error) {
-    console.error('Failed to fetch volumes:', error)
-    toast.error('Gagal memuat volumes')
+  } finally {
+    loadingJobDetail.value = false
   }
 }
 
@@ -455,8 +500,34 @@ const deleteJob = async (jobId: string) => {
   }
 }
 
+const formatOutputType = (type: string) => {
+  const labels: Record<string, string> = {
+    mask: 'Mask Segmentasi',
+    overlay: 'Overlay Segmentasi',
+    instances_json: 'Instance JSON',
+    depth_raw_vis: 'Depth Raw',
+    depth_scaled_vis: 'Depth Terkalibrasi',
+    depth_masked: 'Depth Termask',
+    height_map: 'Height Map',
+    lifted_points_npz: 'Titik 3D (NPZ)',
+    volume_heatmap: 'Heatmap Volume',
+    volume_result_npz: 'Volume Result (NPZ)',
+    bev_image: 'BEV Image',
+    bev_mask_proyeksi: 'BEV Mask',
+    bev_overlay: 'BEV Overlay',
+  }
+  return labels[type] || type
+}
+
+const handleImageError = (output: PredictionOutput) => {
+  console.warn('Failed to load image:', output.output_type)
+}
+
 const closeJobDetail = () => {
   selectedJob.value = null
+  jobOutputs.value = []
+  jobInstances.value = []
+  jobVolumes.value = []
 }
 
 const getSourceTypeClass = (type: string) => {
