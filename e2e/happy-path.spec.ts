@@ -34,6 +34,7 @@ test('Settings validates access against the UI fixture', async ({ page }) => {
 })
 
 test('Cameras table retains its domain columns', async ({ page }) => {
+  await installApiFixture(page, true)
   await page.goto('/dashboard/cameras')
   for (const name of ['Nama', 'Resolusi', 'FPS', 'Lokasi', 'Status Kalibrasi']) {
     await expect(page.getByRole('columnheader', { name, exact: true })).toBeVisible()

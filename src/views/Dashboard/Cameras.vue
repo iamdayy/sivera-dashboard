@@ -1,278 +1,463 @@
 <template>
-  <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">Manajemen Kamera</h1>
-      <Button @click="openCreateModal" variant="primary">
+  <div ref="view" class="min-w-0 space-y-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <h1 class="text-2xl font-bold">Manajemen Kamera</h1>
+      <Button data-camera-create :disabled="!apiStore.hasApiKey" @click="openCreateDialog">
         Tambah Kamera
       </Button>
     </div>
 
-    <!-- Camera Table -->
-    <Card>
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Resolusi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FPS</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status Kalibrasi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="camera in cameras" :key="camera.id" class="hover:bg-gray-50">
-              <td class="px-4 py-4">
-                <div class="font-medium text-gray-900">{{ camera.name }}</div>
-                <div class="text-sm text-gray-500">{{ camera.id }}</div>
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-900">
-                {{ camera.resolution_w }}x{{ camera.resolution_h }}
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-900">{{ camera.fps }}</td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ camera.latitude?.toFixed(4) ?? '-' }}, {{ camera.longitude?.toFixed(4) ?? '-' }}
-              </td>
-              <td class="px-4 py-4">
-                <span v-if="cameraStatuses[camera.id] === 'active'" class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
-                  Siap
-                </span>
-                <span v-else-if="cameraStatuses[camera.id] === 'loading'" class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">
-                  Memeriksa...
-                </span>
-                <span v-else class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">
-                  Belum Dikalibrasi
-                </span>
-              </td>
-              <td class="px-4 py-4">
-                <div class="flex space-x-2">
-                  <Button variant="ghost" size="sm" @click="editCamera(camera)">
-                    Edit
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="deleteCamera(camera)"
-                    class="text-destructive hover:text-destructive/80">
-                    Hapus
-                  </Button>
+    <Alert v-if="!apiStore.hasApiKey">
+      <AlertTitle>API Key belum diatur</AlertTitle>
+      <AlertDescription>
+        Atur akses API sebelum memuat atau menambahkan kamera.
+        <RouterLink
+          to="/dashboard/settings"
+          class="inline-flex min-h-11 items-center text-primary underline underline-offset-4"
+        >
+          Buka Pengaturan
+        </RouterLink>
+      </AlertDescription>
+    </Alert>
+
+    <Card class="min-w-0 gap-0 py-0">
+      <CardContent class="min-w-0 p-0">
+        <Table aria-label="Daftar kamera">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nama</TableHead>
+              <TableHead class="text-right">Resolusi</TableHead>
+              <TableHead class="text-right">FPS</TableHead>
+              <TableHead class="text-right">Lokasi</TableHead>
+              <TableHead>Status Kalibrasi</TableHead>
+              <TableHead>Aksi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="loading">
+              <TableCell colspan="6">
+                <div role="status" class="space-y-3">
+                  <p class="text-muted-foreground">Memuat data kamera...</p>
+                  <Skeleton class="h-5 w-full" />
                 </div>
-              </td>
-            </tr>
-            <tr v-if="!cameras.length">
-              <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+              </TableCell>
+            </TableRow>
+            <TableRow v-else-if="loadError">
+              <TableCell colspan="6" class="whitespace-normal">
+                <Alert variant="destructive">
+                  <AlertTitle>Gagal memuat data kamera</AlertTitle>
+                  <AlertDescription>
+                    <p>{{ loadError }}</p>
+                    <Button
+                      variant="outline"
+                      class="mt-2 w-fit text-foreground"
+                      @click="fetchCameras"
+                      >Coba Lagi</Button
+                    >
+                  </AlertDescription>
+                </Alert>
+              </TableCell>
+            </TableRow>
+            <TableRow v-for="camera in loadError ? [] : cameras" :key="camera.id">
+              <TableCell class="min-w-52 max-w-80 whitespace-normal">
+                <div class="break-words font-medium">{{ camera.name }}</div>
+                <div class="break-all text-xs text-muted-foreground">{{ camera.id }}</div>
+              </TableCell>
+              <TableCell class="text-right tabular-nums"
+                >{{ camera.resolution_w }}x{{ camera.resolution_h }}</TableCell
+              >
+              <TableCell class="text-right tabular-nums">{{ camera.fps }}</TableCell>
+              <TableCell class="text-right tabular-nums text-muted-foreground">
+                {{ camera.latitude?.toFixed(4) ?? '-' }}, {{ camera.longitude?.toFixed(4) ?? '-' }}
+              </TableCell>
+              <TableCell>
+                <Badge v-if="cameraStatuses[camera.id] === 'active'">Siap</Badge>
+                <Badge v-else-if="cameraStatuses[camera.id] === 'loading'" variant="secondary"
+                  >Memeriksa...</Badge
+                >
+                <Badge v-else-if="cameraStatuses[camera.id] === 'error'" variant="destructive"
+                  >Gagal diperiksa</Badge
+                >
+                <Badge v-else variant="secondary">Belum Dikalibrasi</Badge>
+              </TableCell>
+              <TableCell>
+                <div class="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    :aria-label="`Edit ${camera.name}`"
+                    @click="editCamera(camera, $event)"
+                    >Edit</Button
+                  >
+                  <Button
+                    variant="ghost"
+                    class="text-destructive hover:text-destructive"
+                    :aria-label="`Hapus ${camera.name}`"
+                    @click="confirmDelete(camera, $event)"
+                    >Hapus</Button
+                  >
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow v-if="!loading && !loadError && apiStore.hasApiKey && !cameras.length">
+              <TableCell
+                colspan="6"
+                class="py-8 text-center whitespace-normal text-muted-foreground"
+              >
                 Belum ada kamera terdaftar. Klik "Tambah Kamera" untuk memulai.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </CardContent>
     </Card>
 
-    <!-- Create/Edit Modal -->
-    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
-      <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-        <h2 class="text-lg font-semibold mb-4">{{ editingCamera ? 'Edit Kamera' : 'Tambah Kamera Baru' }}</h2>
-
-        <form @submit.prevent="saveCamera">
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Nama Kamera</label>
-              <input v-model="form.name" type="text" required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Contoh: Kamera Utama" />
+    <Dialog :open="isCameraDialogOpen" @update:open="setCameraDialogOpen">
+      <DialogContent
+        :show-close-button="!saving"
+        @close-auto-focus="restoreFocus"
+        @escape-key-down="preventWhileSaving"
+        @interact-outside="preventWhileSaving"
+      >
+        <DialogHeader>
+          <DialogTitle>{{ editingCamera ? 'Edit Kamera' : 'Tambah Kamera Baru' }}</DialogTitle>
+          <DialogDescription>Atur identitas, resolusi, dan lokasi kamera.</DialogDescription>
+        </DialogHeader>
+        <form class="space-y-4" @submit.prevent="saveCamera">
+          <fieldset :disabled="saving" class="min-w-0 space-y-4">
+            <div class="space-y-2">
+              <Label for="camera-name">Nama Kamera</Label>
+              <Input id="camera-name" v-model="form.name" required maxlength="100" />
             </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">RTSP URL</label>
-              <input v-model="form.rtsp_url" type="text"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="rtsp://user:pass@ip:port/stream" />
+            <div class="space-y-2">
+              <Label for="camera-rtsp">RTSP URL</Label>
+              <Input
+                id="camera-rtsp"
+                v-model="form.rtsp_url"
+                maxlength="500"
+                aria-describedby="camera-rtsp-help"
+              />
+              <p id="camera-rtsp-help" class="text-xs text-muted-foreground">
+                Opsional. Prediksi melalui RTSP belum tersedia.
+              </p>
             </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Resolusi W</label>
-                <input v-model="form.resolution_w" type="number" required
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="1920" />
+            <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2">
+              <div class="space-y-2">
+                <Label for="camera-width">Resolusi W</Label>
+                <Input
+                  id="camera-width"
+                  v-model="form.resolution_w"
+                  type="number"
+                  required
+                  min="1"
+                  max="10000"
+                  step="1"
+                />
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Resolusi H</label>
-                <input v-model="form.resolution_h" type="number" required
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="1080" />
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">FPS</label>
-              <input v-model="form.fps" type="number" required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="15" />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-                <input v-model="form.latitude" type="number" step="any"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="-6.9271" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
-                <input v-model="form.longitude" type="number" step="any"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="110.4215" />
+              <div class="space-y-2">
+                <Label for="camera-height">Resolusi H</Label>
+                <Input
+                  id="camera-height"
+                  v-model="form.resolution_h"
+                  type="number"
+                  required
+                  min="1"
+                  max="10000"
+                  step="1"
+                />
               </div>
             </div>
-          </div>
-
-          <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
-            <Button type="submit" variant="primary" :isLoading="saving">
-              {{ editingCamera ? 'Simpan Perubahan' : 'Tambah Kamera' }}
+            <div class="space-y-2">
+              <Label for="camera-fps">FPS</Label>
+              <Input
+                id="camera-fps"
+                v-model="form.fps"
+                type="number"
+                required
+                min="1"
+                max="120"
+                step="1"
+              />
+            </div>
+            <div
+              class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2"
+              aria-describedby="camera-location-help"
+            >
+              <div class="space-y-2">
+                <Label for="camera-latitude">Latitude</Label>
+                <Input
+                  id="camera-latitude"
+                  v-model="form.latitude"
+                  type="number"
+                  min="-90"
+                  max="90"
+                  step="any"
+                  aria-describedby="camera-location-help"
+                />
+              </div>
+              <div class="space-y-2">
+                <Label for="camera-longitude">Longitude</Label>
+                <Input
+                  id="camera-longitude"
+                  v-model="form.longitude"
+                  type="number"
+                  min="-180"
+                  max="180"
+                  step="any"
+                  aria-describedby="camera-location-help"
+                />
+              </div>
+            </div>
+            <p id="camera-location-help" class="text-xs text-muted-foreground">
+              Opsional. Koordinat kosong tidak dikirim.
+            </p>
+          </fieldset>
+          <Alert v-if="saveError" variant="destructive">
+            <AlertTitle>Gagal menyimpan kamera</AlertTitle>
+            <AlertDescription>{{ saveError }}</AlertDescription>
+          </Alert>
+          <DialogFooter>
+            <Button variant="outline" :disabled="saving" @click="setCameraDialogOpen(false)"
+              >Batal</Button
+            >
+            <Button type="submit" :disabled="saving" :aria-busy="saving">
+              {{
+                saving
+                  ? 'Menyimpan kamera...'
+                  : editingCamera
+                    ? 'Simpan Perubahan'
+                    : 'Tambah Kamera'
+              }}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
+
+    <AlertDialog :open="isDeleteDialogOpen" @update:open="setDeleteDialogOpen">
+      <AlertDialogContent @close-auto-focus="restoreFocus" @escape-key-down="preventWhileDeleting">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Kamera?</AlertDialogTitle>
+          <AlertDialogDescription class="break-words">
+            Kamera "{{ deletingCamera?.name }}" beserta kalibrasi dan job terkait akan dihapus.
+            Tindakan ini tidak dapat dibatalkan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Alert v-if="deleteError" variant="destructive">
+          <AlertTitle>Gagal menghapus kamera</AlertTitle>
+          <AlertDescription>{{ deleteError }}</AlertDescription>
+        </Alert>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="deleting">Batal</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            :disabled="deleting"
+            :aria-busy="deleting"
+            @click="deleteCamera"
+          >
+            {{ deleting ? 'Menghapus kamera...' : 'Hapus Kamera' }}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
+import { onMounted, ref } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { onMounted, ref } from 'vue'
-import { listCameras, getCamera, createCamera as apiCreateCamera, updateCamera as apiUpdateCamera, deleteCamera as apiDeleteCamera } from '@/services/cameras'
-import type { Camera, CameraDetail, CreateCameraPayload, UpdateCameraPayload } from '@/types'
+import {
+  listCameras,
+  getCamera,
+  createCamera as apiCreateCamera,
+  updateCamera as apiUpdateCamera,
+  deleteCamera as apiDeleteCamera,
+} from '@/services/cameras'
+import { cameraPayload, createCameraForm } from '@/lib/camera-form'
+import type { Camera } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
-
+const view = ref<HTMLElement | null>(null)
+let dialogTrigger: HTMLElement | null = null
 const cameras = ref<Camera[]>([])
 const loading = ref(false)
-const isCreateModalOpen = ref(false)
+const loadError = ref('')
+const cameraStatuses = ref<Record<string, 'active' | 'none' | 'loading' | 'error'>>({})
+const isCameraDialogOpen = ref(false)
 const editingCamera = ref<Camera | null>(null)
+const form = ref(createCameraForm())
 const saving = ref(false)
-const cameraStatuses = ref<Record<string, 'active' | 'none' | 'loading'>>({})
+const saveError = ref('')
+const isDeleteDialogOpen = ref(false)
+const deletingCamera = ref<Camera | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
-const form = ref<CreateCameraPayload>({
-  name: '',
-  rtsp_url: '',
-  resolution_w: 1920,
-  resolution_h: 1080,
-  fps: 15,
-  latitude: undefined,
-  longitude: undefined,
-})
+function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
+    return error.message
+  return 'Permintaan gagal. Coba kembali.'
+}
 
-const fetchCameras = async () => {
-  if (!apiStore.hasApiKey) return
+async function fetchCameras() {
+  if (!apiStore.hasApiKey || loading.value) return
   loading.value = true
+  loadError.value = ''
   try {
     const response = await listCameras()
     cameras.value = response.items
-    // Check calibration status for each camera
-    for (const cam of cameras.value) {
-      cameraStatuses.value[cam.id] = 'loading'
-      try {
-        const detail = await getCamera(cam.id)
-        cameraStatuses.value[cam.id] = detail.active_calibration_id ? 'active' : 'none'
-      } catch {
-        cameraStatuses.value[cam.id] = 'none'
-      }
-    }
-  } catch (error) {
-    console.error('Failed to fetch cameras:', error)
-    toast.error('Gagal memuat data kamera')
+    cameraStatuses.value = Object.fromEntries(
+      response.items.map((camera) => [camera.id, 'loading']),
+    )
+  } catch (error: unknown) {
+    loadError.value = errorMessage(error)
   } finally {
     loading.value = false
   }
-}
-
-const openCreateModal = () => {
-  editingCamera.value = null
-  form.value = {
-    name: '',
-    rtsp_url: '',
-    resolution_w: 1920,
-    resolution_h: 1080,
-    fps: 15,
-    latitude: undefined,
-    longitude: undefined,
+  if (loadError.value) return
+  for (const camera of cameras.value) {
+    try {
+      const detail = await getCamera(camera.id)
+      cameraStatuses.value[camera.id] = detail.active_calibration_id ? 'active' : 'none'
+    } catch {
+      cameraStatuses.value[camera.id] = 'error'
+    }
   }
-  isCreateModalOpen.value = true
 }
 
-const editCamera = (camera: Camera) => {
+function restoreFocus(event: Event) {
+  event.preventDefault()
+  const target = dialogTrigger?.isConnected
+    ? dialogTrigger
+    : view.value?.querySelector<HTMLElement>('[data-camera-create]')
+  target?.focus()
+}
+
+function openCreateDialog(event: MouseEvent) {
+  dialogTrigger = event.currentTarget as HTMLElement
+  editingCamera.value = null
+  form.value = createCameraForm()
+  saveError.value = ''
+  isCameraDialogOpen.value = true
+}
+
+function editCamera(camera: Camera, event: MouseEvent) {
+  dialogTrigger = event.currentTarget as HTMLElement
   editingCamera.value = camera
-  form.value = {
-    name: camera.name,
-    rtsp_url: camera.rtsp_url || '',
-    resolution_w: camera.resolution_w,
-    resolution_h: camera.resolution_h,
-    fps: camera.fps,
-    latitude: camera.latitude ?? undefined,
-    longitude: camera.longitude ?? undefined,
+  form.value = createCameraForm(camera)
+  saveError.value = ''
+  isCameraDialogOpen.value = true
+}
+
+function setCameraDialogOpen(open: boolean) {
+  if (saving.value) return
+  isCameraDialogOpen.value = open
+  if (!open) {
+    editingCamera.value = null
+    form.value = createCameraForm()
+    saveError.value = ''
   }
-  isCreateModalOpen.value = true
 }
 
-const closeCreateModal = () => {
-  isCreateModalOpen.value = false
-  editingCamera.value = null
+function preventWhileSaving(event: Event) {
+  if (saving.value) event.preventDefault()
 }
 
-const saveCamera = async () => {
+async function saveCamera() {
+  if (saving.value) return
+  saveError.value = ''
   saving.value = true
   try {
+    const payload = cameraPayload(form.value, !!editingCamera.value)
     if (editingCamera.value) {
-      const payload: UpdateCameraPayload = {
-        name: form.value.name,
-        rtsp_url: form.value.rtsp_url || undefined,
-        resolution_w: form.value.resolution_w,
-        resolution_h: form.value.resolution_h,
-        fps: form.value.fps,
-        latitude: form.value.latitude,
-        longitude: form.value.longitude,
-      }
       await apiUpdateCamera(editingCamera.value.id, payload)
       toast.success('Kamera berhasil diperbarui')
     } else {
-      await apiCreateCamera(form.value)
+      await apiCreateCamera(payload)
       toast.success('Kamera berhasil ditambahkan')
     }
-    closeCreateModal()
-    await fetchCameras()
   } catch (error: unknown) {
-    console.error('Failed to save camera:', error)
-    const err = error as { response?: { data?: { detail?: string } }; message?: string }
-    toast.error('Gagal menyimpan kamera', {
-      description: err.response?.data?.detail || err.message,
-    })
+    saveError.value = errorMessage(error)
+    toast.error('Gagal menyimpan kamera', { description: saveError.value })
+    return
   } finally {
     saving.value = false
   }
+  setCameraDialogOpen(false)
+  await fetchCameras()
 }
 
-const deleteCamera = async (camera: Camera) => {
-  if (confirm(`Apakah Anda yakin ingin menghapus kamera "${camera.name}"?`)) {
-    try {
-      await apiDeleteCamera(camera.id)
-      toast.success('Kamera berhasil dihapus')
-      await fetchCameras()
-    } catch (error) {
-      console.error('Failed to delete camera:', error)
-      toast.error('Gagal menghapus kamera')
-    }
+function confirmDelete(camera: Camera, event: MouseEvent) {
+  dialogTrigger = event.currentTarget as HTMLElement
+  deletingCamera.value = camera
+  deleteError.value = ''
+  isDeleteDialogOpen.value = true
+}
+
+function setDeleteDialogOpen(open: boolean) {
+  if (deleting.value) return
+  isDeleteDialogOpen.value = open
+  if (!open) {
+    deletingCamera.value = null
+    deleteError.value = ''
   }
 }
 
-onMounted(async () => {
-  if (apiStore.hasApiKey) {
-    await fetchCameras()
+function preventWhileDeleting(event: Event) {
+  if (deleting.value) event.preventDefault()
+}
+
+async function deleteCamera() {
+  if (deleting.value || !deletingCamera.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await apiDeleteCamera(deletingCamera.value.id)
+    toast.success('Kamera berhasil dihapus')
+  } catch (error: unknown) {
+    deleteError.value = errorMessage(error)
+    toast.error('Gagal menghapus kamera', { description: deleteError.value })
+    return
+  } finally {
+    deleting.value = false
   }
-})
+  dialogTrigger = null
+  setDeleteDialogOpen(false)
+  await fetchCameras()
+}
+
+onMounted(fetchCameras)
 </script>
