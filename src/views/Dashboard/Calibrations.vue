@@ -1,321 +1,433 @@
 <template>
-  <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">Manajemen Kalibrasi</h1>
-      <Button @click="openCreateModal" variant="primary" :disabled="!selectedCameraId">
+  <div ref="view" class="min-w-0 space-y-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <h1 class="text-2xl font-bold">Manajemen Kalibrasi</h1>
+      <Button data-calibration-create :disabled="!selectedCameraId || !apiStore.hasApiKey || busy" @click="openCreateDialog">
         Buat Kalibrasi Baru
       </Button>
     </div>
 
-    <!-- Camera Selector -->
-    <Card class="p-4">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Camera</label>
-      <select v-model="selectedCameraId" @change="fetchCalibrations"
-        class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
-        <option value="">-- Pilih Camera --</option>
-        <option v-for="cam in cameras" :key="cam.id" :value="cam.id">
-          {{ cam.name }} ({{ cam.resolution_w }}x{{ cam.resolution_h }})
-        </option>
-      </select>
-      <p v-if="selectedCameraId" class="mt-2 text-sm text-gray-500">
-        Menampilkan kalibrasi untuk camera terpilih
-      </p>
+    <Alert v-if="!apiStore.hasApiKey">
+      <AlertTitle>API Key belum diatur</AlertTitle>
+      <AlertDescription>
+        Atur akses API sebelum memuat kamera dan kalibrasi.
+        <RouterLink to="/dashboard/settings" class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">Buka Pengaturan</RouterLink>
+      </AlertDescription>
+    </Alert>
+
+    <Card class="min-w-0 gap-0 py-4">
+      <CardContent class="space-y-2 px-4">
+        <Label for="calibration-camera">Pilih Kamera</Label>
+        <Select v-model="selectedCameraId" :disabled="!apiStore.hasApiKey || cameraLoading || !cameras.length || busy || isCreateDialogOpen || isDeleteDialogOpen">
+          <SelectTrigger id="calibration-camera" class="md:max-w-lg" aria-describedby="calibration-camera-help">
+            <SelectValue placeholder="Pilih kamera" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="cam in cameras" :key="cam.id" :value="cam.id">
+              {{ cam.name }} ({{ cam.resolution_w }}x{{ cam.resolution_h }})
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p id="calibration-camera-help" class="break-words text-sm text-muted-foreground">
+          {{ selectedCamera ? `Kalibrasi untuk ${selectedCamera.name}.` : 'Pilih kamera sebelum membuat kalibrasi.' }}
+        </p>
+        <p v-if="cameraLoading" role="status" class="text-sm text-muted-foreground">Memuat data kamera...</p>
+        <Alert v-else-if="cameraError" variant="destructive">
+          <AlertTitle>Gagal memuat data kamera</AlertTitle>
+          <AlertDescription>
+            <p>{{ cameraError }}</p>
+            <Button variant="outline" class="mt-2 w-fit text-foreground" @click="fetchCameras">Coba Lagi</Button>
+          </AlertDescription>
+        </Alert>
+        <p v-else-if="apiStore.hasApiKey && !cameras.length" class="text-sm text-muted-foreground">
+          Belum ada kamera terdaftar.
+          <RouterLink to="/dashboard/cameras" class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">Buka Manajemen Kamera</RouterLink>
+        </p>
+      </CardContent>
     </Card>
 
-    <!-- Calibration List -->
-    <Card>
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Versi</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RMS Reprojection</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chessboard</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Square Size</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dibuat</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="calib in calibrations" :key="calib.id" class="hover:bg-gray-50">
-              <td class="px-4 py-4 font-medium text-gray-900">v{{ calib.version }}</td>
-              <td class="px-4 py-4 text-sm text-gray-900">
-                {{ calib.rms_reproj ? calib.rms_reproj.toFixed(3) + ' px' : 'N/A' }}
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ calib.chessboard_cols }}x{{ calib.chessboard_rows }}
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ calib.square_m ? calib.square_m * 100 + ' cm' : 'N/A' }}
-              </td>
-              <td class="px-4 py-4">
-                <span :class="calib.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
-                  class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">
-                  {{ calib.is_active ? 'Aktif' : 'Non-Aktif' }}
-                </span>
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ formatDate(calib.created_at) }}
-              </td>
-              <td class="px-4 py-4">
-                <div class="flex space-x-2">
-                  <Button v-if="!calib.is_active" variant="ghost" size="sm" @click="activateCalibration(calib.id)">
-                    Aktifkan
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="viewPreview(calib.id)">
-                    Preview
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="deleteCalibration(calib.id)"
-                    class="text-destructive hover:text-destructive/80">
-                    Hapus
-                  </Button>
+    <Alert v-if="actionError" variant="destructive">
+      <AlertTitle>{{ actionError.title }}</AlertTitle>
+      <AlertDescription>{{ actionError.message }}</AlertDescription>
+    </Alert>
+    <p v-if="previewUrl" role="status" class="text-sm text-muted-foreground">
+      Preview v{{ previewVersion }} siap. Jika tab baru tidak terbuka,
+      <a :href="previewUrl" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">Buka Preview v{{ previewVersion }}</a>.
+    </p>
+
+    <Card class="min-w-0 gap-0 py-0">
+      <CardContent class="min-w-0 p-0">
+        <Table aria-label="Daftar kalibrasi">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Versi</TableHead>
+              <TableHead class="text-right">RMS Reprojection</TableHead>
+              <TableHead class="text-right">Chessboard</TableHead>
+              <TableHead class="text-right">Square Size</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Dibuat</TableHead>
+              <TableHead>Aksi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="loading">
+              <TableCell colspan="7">
+                <div role="status" class="space-y-3">
+                  <p class="text-muted-foreground">Memuat kalibrasi...</p>
+                  <Skeleton class="h-5 w-full" />
                 </div>
-              </td>
-            </tr>
-            <tr v-if="!calibrations.length && selectedCameraId">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                Belum ada kalibrasi untuk camera ini. Klik "Buat Kalibrasi Baru" untuk memulai.
-              </td>
-            </tr>
-            <tr v-if="!selectedCameraId">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                Pilih camera terlebih dahulu untuk melihat kalibrasinya.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </TableCell>
+            </TableRow>
+            <TableRow v-else-if="loadError">
+              <TableCell colspan="7" class="whitespace-normal">
+                <Alert variant="destructive">
+                  <AlertTitle>Gagal memuat kalibrasi</AlertTitle>
+                  <AlertDescription>
+                    <p>{{ loadError }}</p>
+                    <Button variant="outline" class="mt-2 w-fit text-foreground" @click="fetchCalibrations">Coba Lagi</Button>
+                  </AlertDescription>
+                </Alert>
+              </TableCell>
+            </TableRow>
+            <template v-else>
+              <TableRow v-for="calib in calibrations" :key="calib.id">
+                <TableCell class="font-medium tabular-nums">v{{ calib.version }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ calib.rms_reproj == null ? '-' : `${calib.rms_reproj.toFixed(3)} px` }}</TableCell>
+                <TableCell class="text-right tabular-nums text-muted-foreground">{{ calib.chessboard_cols ?? '-' }}x{{ calib.chessboard_rows ?? '-' }}</TableCell>
+                <TableCell class="text-right tabular-nums text-muted-foreground">{{ calib.square_m == null ? '-' : `${calib.square_m * 100} cm` }}</TableCell>
+                <TableCell><Badge :variant="calib.is_active ? 'default' : 'secondary'">{{ calib.is_active ? 'Aktif' : 'Non-Aktif' }}</Badge></TableCell>
+                <TableCell class="text-muted-foreground">{{ formatDate(calib.created_at) }}</TableCell>
+                <TableCell>
+                  <div class="flex gap-2">
+                    <Button v-if="!calib.is_active" variant="ghost" :disabled="busy" :aria-busy="activatingId === calib.id" :aria-label="`Aktifkan kalibrasi v${calib.version}`" @click="activateCalibration(calib)">
+                      {{ activatingId === calib.id ? 'Mengaktifkan...' : 'Aktifkan' }}
+                    </Button>
+                    <Button variant="ghost" :disabled="busy" :aria-busy="previewingId === calib.id" :aria-label="`Preview kalibrasi v${calib.version}`" @click="viewPreview(calib)">
+                      {{ previewingId === calib.id ? 'Memuat preview...' : 'Preview' }}
+                    </Button>
+                    <Button variant="ghost" class="text-destructive hover:text-destructive" :disabled="busy || calib.is_active" :aria-describedby="calib.is_active ? `calibration-delete-help-${calib.id}` : undefined" :aria-label="`Hapus kalibrasi v${calib.version}`" @click="confirmDelete(calib, $event)">Hapus</Button>
+                  </div>
+                  <p v-if="calib.is_active" :id="`calibration-delete-help-${calib.id}`" class="mt-1 text-xs text-muted-foreground">Aktifkan versi lain sebelum menghapus.</p>
+                </TableCell>
+              </TableRow>
+              <TableRow v-if="!calibrations.length">
+                <TableCell colspan="7" class="py-8 text-center whitespace-normal text-muted-foreground">
+                  {{ selectedCameraId ? 'Belum ada kalibrasi untuk kamera ini. Klik "Buat Kalibrasi Baru" untuk memulai.' : 'Pilih kamera terlebih dahulu untuk melihat kalibrasinya.' }}
+                </TableCell>
+              </TableRow>
+            </template>
+          </TableBody>
+        </Table>
+      </CardContent>
     </Card>
 
-    <!-- Create Calibration Modal -->
-    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
-      <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-        <h2 class="text-lg font-semibold mb-4">Buat Kalibrasi Baru</h2>
-
-        <form @submit.prevent="saveCalibration">
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Chessboard Cols</label>
-                <input v-model="calibForm.chessboard_cols" type="number" required min="3" max="50"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+    <Dialog :open="isCreateDialogOpen" @update:open="setCreateDialogOpen">
+      <DialogContent class="max-w-2xl" :show-close-button="!saving" @close-auto-focus="restoreFocus" @escape-key-down="preventWhileSaving" @interact-outside="preventWhileSaving">
+        <DialogHeader>
+          <DialogTitle>Buat Kalibrasi Baru</DialogTitle>
+          <DialogDescription class="break-words">Unggah gambar chessboard untuk {{ selectedCamera?.name }}.</DialogDescription>
+        </DialogHeader>
+        <form class="space-y-4" @submit.prevent="saveCalibration">
+          <fieldset :disabled="saving" class="min-w-0 space-y-4">
+            <div class="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
+              <div class="space-y-2">
+                <Label for="calibration-cols">Chessboard Cols</Label>
+                <Input id="calibration-cols" v-model="calibForm.chessboard_cols" type="number" required min="3" max="50" step="1" />
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Chessboard Rows</label>
-                <input v-model="calibForm.chessboard_rows" type="number" required min="3" max="50"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <div class="space-y-2">
+                <Label for="calibration-rows">Chessboard Rows</Label>
+                <Input id="calibration-rows" v-model="calibForm.chessboard_rows" type="number" required min="3" max="50" step="1" />
               </div>
             </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Square Size (meter)</label>
-                <input v-model="calibForm.square_m" type="number" required step="0.001" min="0.001" max="1"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <div class="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
+              <div class="space-y-2">
+                <Label for="calibration-square">Square Size (meter)</Label>
+                <Input id="calibration-square" v-model="calibForm.square_m" type="number" required step="0.001" min="0.001" max="1" />
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Alpha (0-1)</label>
-                <input v-model="calibForm.alpha" type="number" step="0.01" min="0" max="1"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <div class="space-y-2">
+                <Label for="calibration-alpha">Alpha (0-1)</Label>
+                <Input id="calibration-alpha" v-model="calibForm.alpha" type="number" required step="0.01" min="0" max="1" />
               </div>
             </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Catatan</label>
-              <textarea v-model="calibForm.notes" rows="3"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Catatan opsional tentang kalibrasi ini..." />
+            <div class="space-y-2">
+              <Label for="calibration-notes">Catatan</Label>
+              <Textarea id="calibration-notes" v-model="calibForm.notes" rows="3" placeholder="Catatan opsional tentang kalibrasi ini..." />
             </div>
-
-            <div class="border border-dashed border-gray-300 rounded-lg p-4">
-              <p class="text-sm text-gray-600 mb-2">Upload gambar chessboard (minimal 10 gambar):</p>
-              <input type="file" multiple accept="image/*" @change="handleFileUpload" class="w-full text-sm" />
-              <div v-if="uploadedFiles.length > 0" class="mt-2">
-                <p class="text-sm font-medium text-gray-900">{{ uploadedFiles.length }} file terpilih</p>
-                <div class="flex flex-wrap gap-2 mt-1">
-                  <span v-for="file in uploadedFiles" :key="file.name"
-                    class="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
-                    {{ file.name }}
-                  </span>
-                </div>
-              </div>
+            <div class="space-y-2">
+              <Label for="calibration-files">Gambar chessboard</Label>
+              <Input id="calibration-files" type="file" multiple accept="image/*" aria-describedby="calibration-files-help" @change="handleFileUpload" />
+              <p id="calibration-files-help" class="text-sm text-muted-foreground">Minimal 10 gambar chessboard valid. Backend memeriksa gambar sebelum membuat kalibrasi.</p>
+              <p v-if="uploadedFiles.length" role="status" class="text-sm font-medium">{{ uploadedFiles.length }} file terpilih</p>
+              <ul v-if="uploadedFiles.length" aria-label="File terpilih" class="max-h-32 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                <li v-for="(file, index) in uploadedFiles" :key="index" class="break-all">{{ file.name }}</li>
+              </ul>
             </div>
-          </div>
-
-          <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
-            <Button type="submit" variant="primary" :isLoading="saving">
-              Buat Kalibrasi
-            </Button>
-          </div>
+          </fieldset>
+          <Alert v-if="saveError" variant="destructive">
+            <AlertTitle>Gagal membuat kalibrasi</AlertTitle>
+            <AlertDescription>{{ saveError }}</AlertDescription>
+          </Alert>
+          <DialogFooter>
+            <Button variant="outline" :disabled="saving" @click="setCreateDialogOpen(false)">Batal</Button>
+            <Button type="submit" :disabled="saving" :aria-busy="saving">{{ saving ? 'Membuat kalibrasi...' : 'Buat Kalibrasi' }}</Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
+
+    <AlertDialog :open="isDeleteDialogOpen" @update:open="setDeleteDialogOpen">
+      <AlertDialogContent @close-auto-focus="restoreFocus" @escape-key-down="preventWhileDeleting">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Kalibrasi?</AlertDialogTitle>
+          <AlertDialogDescription class="break-words">Kalibrasi v{{ deletingCalibration?.version }} untuk {{ selectedCamera?.name }} akan dihapus. Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <Alert v-if="deleteError" variant="destructive">
+          <AlertTitle>Gagal menghapus kalibrasi</AlertTitle>
+          <AlertDescription>{{ deleteError }}</AlertDescription>
+        </Alert>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="deleting">Batal</AlertDialogCancel>
+          <Button variant="destructive" :disabled="deleting" :aria-busy="deleting" @click="deleteCalibration">{{ deleting ? 'Menghapus kalibrasi...' : 'Hapus Kalibrasi' }}</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { onMounted, ref } from 'vue'
 import { createCalibration as apiCreateCalibration, listCalibrations as apiListCalibrations, activateCalibration as apiActivateCalibration, getUndistortPreview as apiGetUndistortPreview, deleteCalibration as apiDeleteCalibration } from '@/services/calibrations'
 import { listCameras } from '@/services/cameras'
+import { calibrationPayload, createCalibrationForm } from '@/lib/calibration-form'
+import type { CreateCalibrationPayload } from '@/services/calibrations'
+import type { Calibration, Camera } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
-
-import type { Calibration, Camera } from '@/types'
-
+const view = ref<HTMLElement | null>(null)
+let dialogTrigger: HTMLElement | null = null
 const cameras = ref<Camera[]>([])
-const calibrations = ref<Calibration[]>([])
 const selectedCameraId = ref('')
+const selectedCamera = computed(() => cameras.value.find(camera => camera.id === selectedCameraId.value))
+const cameraLoading = ref(false)
+const cameraError = ref('')
+const calibrations = ref<Calibration[]>([])
 const loading = ref(false)
+const loadError = ref('')
+let loadVersion = 0
 const saving = ref(false)
-const isCreateModalOpen = ref(false)
-
-const calibForm = ref({
-  chessboard_cols: 9,
-  chessboard_rows: 6,
-  square_m: 0.025,
-  alpha: 0.0,
-  notes: '',
-})
-
+const isCreateDialogOpen = ref(false)
+const calibForm = ref(createCalibrationForm())
 const uploadedFiles = ref<File[]>([])
+const saveError = ref('')
+const isDeleteDialogOpen = ref(false)
+const deletingCalibration = ref<Calibration | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
+const activatingId = ref('')
+const previewingId = ref('')
+const actionError = ref<{ title: string; message: string } | null>(null)
+const previewUrl = ref('')
+const previewVersion = ref<number | null>(null)
+const busy = computed(() => saving.value || deleting.value || !!activatingId.value || !!previewingId.value)
 
-const fetchCameras = async () => {
-  if (!apiStore.hasApiKey) return
+function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message
+  return 'Permintaan gagal. Coba kembali.'
+}
+
+async function fetchCameras() {
+  if (!apiStore.hasApiKey || cameraLoading.value) return
+  cameraLoading.value = true
+  cameraError.value = ''
   try {
     const response = await listCameras()
     cameras.value = response.items
-    if (cameras.value.length > 0 && !selectedCameraId.value) {
-      selectedCameraId.value = cameras.value[0]!.id
-    }
-  } catch (error) {
-    console.error('Failed to fetch cameras:', error)
-    toast.error('Gagal memuat data camera')
-  }
-}
-
-const fetchCalibrations = async () => {
-  if (!selectedCameraId.value || !apiStore.hasApiKey) return
-  loading.value = true
-  try {
-    const response = await apiListCalibrations(selectedCameraId.value)
-    calibrations.value = response.items
-  } catch (error) {
-    console.error('Failed to fetch calibrations:', error)
-    toast.error('Gagal memuat data kalibrasi')
+    if (!selectedCameraId.value) selectedCameraId.value = response.items[0]?.id ?? ''
+  } catch (error: unknown) {
+    cameraError.value = errorMessage(error)
   } finally {
-    loading.value = false
+    cameraLoading.value = false
   }
 }
 
-const handleFileUpload = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const files = Array.from(target.files || [])
-  uploadedFiles.value = files
+async function fetchCalibrations() {
+  const cameraId = selectedCameraId.value
+  const version = ++loadVersion
+  calibrations.value = []
+  loadError.value = ''
+  loading.value = !!cameraId && apiStore.hasApiKey
+  if (!loading.value) return
+  try {
+    const response = await apiListCalibrations(cameraId)
+    if (version === loadVersion) calibrations.value = response.items
+  } catch (error: unknown) {
+    if (version === loadVersion) loadError.value = errorMessage(error)
+  } finally {
+    if (version === loadVersion) loading.value = false
+  }
 }
 
-const openCreateModal = () => {
-  calibForm.value = {
-    chessboard_cols: 9,
-    chessboard_rows: 6,
-    square_m: 0.025,
-    alpha: 0.0,
-    notes: '',
-  }
+watch(selectedCameraId, () => {
+  actionError.value = null
+  previewUrl.value = ''
+  previewVersion.value = null
+  void fetchCalibrations()
+})
+
+function handleFileUpload(event: Event) {
+  const target = event.target
+  if (target instanceof HTMLInputElement) uploadedFiles.value = Array.from(target.files ?? [])
+}
+
+function restoreFocus(event: Event) {
+  event.preventDefault()
+  const target = dialogTrigger?.isConnected ? dialogTrigger : view.value?.querySelector<HTMLElement>('[data-calibration-create]')
+  target?.focus()
+}
+
+function openCreateDialog(event: MouseEvent) {
+  if (busy.value || !selectedCameraId.value) return
+  dialogTrigger = event.currentTarget as HTMLElement
+  calibForm.value = createCalibrationForm()
   uploadedFiles.value = []
-  isCreateModalOpen.value = true
+  saveError.value = ''
+  isCreateDialogOpen.value = true
 }
 
-const closeCreateModal = () => {
-  isCreateModalOpen.value = false
+function setCreateDialogOpen(open: boolean) {
+  if (saving.value) return
+  isCreateDialogOpen.value = open
+  if (!open) {
+    calibForm.value = createCalibrationForm()
+    uploadedFiles.value = []
+    saveError.value = ''
+  }
 }
 
-const saveCalibration = async () => {
-  if (!selectedCameraId.value) return
-  if (uploadedFiles.value.length < 10) {
-    toast.warning('Minimal 10 gambar chessboard diperlukan')
+function preventWhileSaving(event: Event) {
+  if (saving.value) event.preventDefault()
+}
+
+async function saveCalibration() {
+  if (busy.value || !selectedCameraId.value) return
+  saveError.value = ''
+  let payload: CreateCalibrationPayload
+  try {
+    payload = calibrationPayload(calibForm.value, uploadedFiles.value)
+  } catch (error: unknown) {
+    saveError.value = errorMessage(error)
     return
   }
-
+  const cameraId = selectedCameraId.value
   saving.value = true
   try {
-    await apiCreateCalibration(selectedCameraId.value, {
-      chessboard_cols: calibForm.value.chessboard_cols,
-      chessboard_rows: calibForm.value.chessboard_rows,
-      square_m: calibForm.value.square_m,
-      alpha: calibForm.value.alpha,
-      notes: calibForm.value.notes || undefined,
-      files: uploadedFiles.value,
-    })
-
+    await apiCreateCalibration(cameraId, payload)
     toast.success('Kalibrasi berhasil dibuat')
-    closeCreateModal()
-    await fetchCalibrations()
   } catch (error: unknown) {
-    console.error('Failed to create calibration:', error)
-    const err = error as { response?: { data?: { detail?: string } }; message?: string }
-    toast.error('Gagal membuat kalibrasi', {
-      description: err.response?.data?.detail || err.message,
-    })
+    saveError.value = errorMessage(error)
+    toast.error('Gagal membuat kalibrasi', { description: saveError.value })
+    return
   } finally {
     saving.value = false
   }
+  setCreateDialogOpen(false)
+  if (cameraId === selectedCameraId.value) await fetchCalibrations()
 }
 
-const activateCalibration = async (calibId: string) => {
+async function activateCalibration(calib: Calibration) {
+  if (busy.value || calib.is_active) return
+  const cameraId = selectedCameraId.value
+  activatingId.value = calib.id
+  actionError.value = null
   try {
-    await apiActivateCalibration(selectedCameraId.value, calibId)
+    await apiActivateCalibration(cameraId, calib.id)
     toast.success('Kalibrasi berhasil diaktifkan')
-    await fetchCalibrations()
-  } catch (error) {
-    console.error('Failed to activate calibration:', error)
-    toast.error('Gagal mengaktifkan kalibrasi')
+    if (cameraId === selectedCameraId.value) await fetchCalibrations()
+  } catch (error: unknown) {
+    actionError.value = { title: `Gagal mengaktifkan kalibrasi v${calib.version}`, message: errorMessage(error) }
+    toast.error(actionError.value.title, { description: actionError.value.message })
+  } finally {
+    activatingId.value = ''
   }
 }
 
-const viewPreview = async (calibId: string) => {
+async function viewPreview(calib: Calibration) {
+  if (busy.value) return
+  previewingId.value = calib.id
+  actionError.value = null
+  previewUrl.value = ''
   try {
-    const url = await apiGetUndistortPreview(selectedCameraId.value, calibId)
-    window.open(url, '_blank')
-  } catch (error) {
-    console.error('Failed to get preview:', error)
-    toast.error('Gagal memuat preview kalibrasi')
+    previewUrl.value = await apiGetUndistortPreview(selectedCameraId.value, calib.id)
+    previewVersion.value = calib.version
+    window.open(previewUrl.value, '_blank', 'noopener,noreferrer')
+  } catch (error: unknown) {
+    actionError.value = { title: `Gagal memuat preview kalibrasi v${calib.version}`, message: errorMessage(error) }
+    toast.error(actionError.value.title, { description: actionError.value.message })
+  } finally {
+    previewingId.value = ''
   }
 }
 
-const deleteCalibration = async (calibId: string) => {
-  if (confirm('Apakah Anda yakin ingin menghapus kalibrasi ini?')) {
-    try {
-      await apiDeleteCalibration(selectedCameraId.value, calibId)
-      toast.success('Kalibrasi berhasil dihapus')
-      await fetchCalibrations()
-    } catch (error) {
-      console.error('Failed to delete calibration:', error)
-      toast.error('Gagal menghapus kalibrasi')
-    }
+function confirmDelete(calib: Calibration, event: MouseEvent) {
+  if (busy.value || calib.is_active) return
+  dialogTrigger = event.currentTarget as HTMLElement
+  deletingCalibration.value = calib
+  deleteError.value = ''
+  isDeleteDialogOpen.value = true
+}
+
+function setDeleteDialogOpen(open: boolean) {
+  if (deleting.value) return
+  isDeleteDialogOpen.value = open
+  if (!open) {
+    deletingCalibration.value = null
+    deleteError.value = ''
   }
 }
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('id-ID', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+function preventWhileDeleting(event: Event) {
+  if (deleting.value) event.preventDefault()
 }
 
-onMounted(async () => {
-  if (apiStore.hasApiKey) {
-    await fetchCameras()
+async function deleteCalibration() {
+  if (busy.value || !deletingCalibration.value) return
+  const cameraId = selectedCameraId.value
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await apiDeleteCalibration(cameraId, deletingCalibration.value.id)
+    toast.success('Kalibrasi berhasil dihapus')
+  } catch (error: unknown) {
+    deleteError.value = errorMessage(error)
+    toast.error('Gagal menghapus kalibrasi', { description: deleteError.value })
+    return
+  } finally {
+    deleting.value = false
   }
-})
+  dialogTrigger = null
+  setDeleteDialogOpen(false)
+  if (cameraId === selectedCameraId.value) await fetchCalibrations()
+}
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+onMounted(fetchCameras)
+onUnmounted(() => { loadVersion++ })
 </script>
