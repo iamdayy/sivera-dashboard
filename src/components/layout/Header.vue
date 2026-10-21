@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import Button from '@/components/ui/Button.vue'
 import { useApiStore } from '@/stores/api'
 import { computed } from 'vue'
 import MobileNav from './MobileNav.vue'
