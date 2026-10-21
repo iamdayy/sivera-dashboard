@@ -94,6 +94,17 @@ export async function getGroundModel(cameraId: string, groundModelId: string): P
   }
 }
 
+export async function getGroundModelByRef(cameraId: string, groundRefId: string): Promise<GroundModel | null> {
+  try {
+    // Backend doesn't have this endpoint; we fetch active and check if it matches
+    const active = await getActiveGroundModel(cameraId)
+    if (active.ground_ref_id === groundRefId) return active
+    return null
+  } catch {
+    return null
+  }
+}
+
 export interface BEVPreview {
   bev_image_url: string
   bev_mask_url: string

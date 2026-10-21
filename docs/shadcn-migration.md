@@ -151,3 +151,64 @@ ROUND 3 (setelah perbaikan overflow Select dan capture menu terbuka)
 - Koordinat display, world point awal, dan reference/model ID pada Referensi Tanah memerlukan perbaikan integrasi terpisah.
 - Depth scale, autentikasi URL artefak, dan polling belum dibuktikan oleh fixture UI.
 - Keberhasilan kalibrasi hingga prediksi membutuhkan backend dan citra kalibrasi yang sah.
+
+### P5: Referensi Tanah
+
+- Migrasi `src/views/Dashboard/GroundReferences.vue` memakai Select, Textarea, Table, Badge, dan Dialog registry. `src/services/groundReferences.ts` memperbaiki mapping model ground (GET `/ground-models/active` memerlukan validasi ground_ref_id, bukan ground reference ID langsung). BEV preview tetap menggunakan service dan URL yang dikembalikan API.
+- Selector kamera, tabel referensi, dan form pembuatan menggunakan komponen registry. Form mempertahankan native event untuk pemilihan titik image (klik gambar) dan input numeric untuk koordinat dunia (X, Y) dengan step 0.01. Minimal 4 titik dipilih sebelum submit; validasi di frontend dan backend (400 jika < 4).
+- World points default 0,0 diinisialisasi saat menambah titik image; pengguna mengisi manual. Koordinat image menggunakan piksel display (clientX/Y relatif terhadap gambar), bukan piksel asli - ini blocker integrasi terpisah.
+- Dialog controlled mempertahankan field/titik setelah gagal; cancel/Escape/klik luar/tutup membersihkan draft. Pending memblokir submit kedua dan penutupan.
+- Model Ground dan BEV Preview buttons disabled dengan alasan terlihat untuk referensi non-aktif (model ground belum dibuat). Model Ground memerlukan referensi aktif; BEV preview memerlukan model ground yang terhubung ke referensi yang sama.
+- Hapus referensi tanah disabled dengan penjelasan: aktif disabled karena "Aktifkan versi lain sebelum menghapus", non-aktif disabled karena "Hapus referensi tanah belum didukung backend" (backend tidak memiliki DELETE endpoint).
+- Verifikasi terakhir: `bun run type-check`, `bun run build`, `bun run test:unit -- --run` (47 lulus/5 file), `bun run test:e2e -- --project=chromium` (69 lulus, 1 live skipped). Target Referensi Tanah memiliki 15 tes lulus. `git diff --check` dan `bun install --frozen-lockfile` lulus.
+- Enam lebar 320/390/600/768/1024/1440 px lulus: halaman tanpa overflow horizontal, tabel scroll dalam container overflow-auto, opsi Select minimal 44 px, dialog muat dalam viewport. Tinggi viewport 420 px tetap menjangkau submit/cancel; tes 200% text resize pada 720x450 dan reduced motion lulus. Ini simulasi reflow/viewport, bukan zoom browser atau keyboard perangkat fisik.
+- Scroll lock create dan pelepasan saat Escape/unmount route diuji. Runtime produksi dan tes enam lebar tidak mencatat pageerror/console error; warning compiler legacy `defineEmits` masih ada.
+- Contrast computed style produksi: primary/white 7.13:1, muted/white 7.56:1, foreground/white 17.74:1, destructive/white 6.47:1, Aktif 6.81:1, Non-Aktif 13.34:1, batas input 3.69:1, outline focus 7.13:1 pada putih. Semua pasangan relevan lulus ambang teks/non-teks; kontrol disabled dikecualikan.
+- Lint scope P5: 0 FAIL/1 WARN `shadow-md` pada menu Select yang benar-benar overlay.
+- Inspector produksi pada 390/768/1440: tabel 0 FAIL/1 WARN, create 0 FAIL/0 WARN. Semua screenshot final dibuka. Bukti sementara di `/tmp/opencode/`.
+- `package.json` dan `bun.lock` tetap di luar commit P5 karena menyertakan perubahan awal user/CLI.
+- Firefox/WebKit belum terverifikasi karena executable tidak tersedia. Ground-model workflow status belum terverifikasi karena blocker koordinat display, world point 0, dan mapping ID model.
+
+#### Click-through P5
+
+| Kontrol | Bukti Chromium |
+| --- | --- |
+| Pilih Kamera | Klik/Enter/Space membuka; End/ArrowDown memilih UUID; satu fetch per perubahan; Escape kembali fokus tanpa mengubah kamera |
+| Tambah Referensi Baru | Membuka dialog dan fokus Satuan Dunia; default Meter tampil; field/label terhubung |
+| Satuan Dunia (Select) | Meter/Metre dipilih via keyboard; perubahan world_units update label kolom X/Y |
+| Deskripsi (Textarea) | Input teks menghasilkan payload sesuai nilai; kosong dihilangkan dari payload |
+| Gambar kalibrasi | Native `<img role="button">` klik menambah titik image (u,v) dalam piksel display; marker visual muncul |
+| Koordinat X, Y | Input numeric step 0.01 mengisi world points; validasi kosong/NaN mencegah submit |
+| Minimal 4 titik | <4 titik: submit disabled, warning amber; ≥4 titik: submit enabled |
+| Simpan Referensi | Mengirim satu POST multipart `image_points`, `world_points`, `world_units`, `description`; pending disabled; sukses refresh dan toast; gagal mempertahankan titik/field dan dapat retry |
+| Batal, Tutup dialog, Escape, klik luar | Menutup/reset tanpa request; fokus kembali trigger; scroll halaman kembali tersedia |
+| Aktifkan | Non-aktif → Aktif toggle versi; refresh tabel; toast sukses |
+| Model Ground | Aktif: menampilkan ID, reproj error, tinggi kamera; Non-aktif: warning model belum dibuat |
+| BEV Preview | Aktif dengan model: toast dengan link buka gambar; Non-aktif/without model: error jelas |
+| Hapus | Aktif disabled dengan alasan; Non-aktif disabled dengan alasan backend |
+| Coba Lagi | Load error → data setelah retry; loading/error tidak disamarkan sebagai kosong |
+| Buka Pengaturan/Manajemen Kamera | Empty tanpa key/kamera menuju route nyata; tombol create disabled sebelum konteks tersedia |
+
+#### Kritik visual final P5
+
+ROUND 1 (baseline migrasi)
+
+- Seen in one second: Referensi Tanah, kamera yang dipilih, daftar versi dengan status dan aksi; overlay form pembuatan dengan gambar kalibrasi dan tabel titik.
+- Idea (one sentence): Kamera, titik image-dunia, satuan meter, dan status aktif menentukan model ground yang siap untuk BEV dan analisis volume.
+- Live thing: pilih kamera, tentukan ≥4 pasangan titik, simpan referensi, aktifkan, buka model ground/BEV preview melalui service yang ada.
+- Layout words by section: title=baris aksi / scope=selector / data=tabel / create=form+image+table.
+- Scores: design 7, usability 8, creativity 6, content 8, overall 7.2. Skor visual di bawah 7.5; bukan sertifikasi aksesibilitas atau bukti backend.
+- Caps applied: pendekatan operasional tabel masih konvensional (creativity maksimal 6); tidak mengklaim redesign atau art direction baru. Cap foto/motion/hero marketing tidak berlaku pada app screen.
+- Top three problems: (1) ruang di bawah tabel pada `desktop-fold.jpg`, dipertahankan karena tinggi tabel mengikuti data; (2) mobile butuh scroll tabel untuk aksi, container `overflow-auto` dan Tab diuji; (3) shell header masih legacy dan tepinya berbeda, ditunda ke P7. Data palsu tidak ditambahkan untuk mengisi halaman.
+- Tujuh pertanyaan app-screen: tabel menjawab referensi mana untuk kamera ini; scope/tabel berbagi tepi canvas; hijau hanya primary/status aktif; angka rata kanan/tabular; 0/null dibuktikan tes; tidak ada chart/legend duplikat; nav terlipat, form/aksi menumpuk dan Select tetap terbaca pada ponsel. Tidak ada font, mark, aset atau struktur nav baru.
+
+#### Delivery gate P5 (scope Referensi Tanah)
+
+- Hard Gate PASS, R-02/03: copy baru tanpa em dash/emoji; enam lebar, viewport pendek dan teks 200% lulus tanpa overflow halaman/menu/dialog.
+- Hard Gate PASS, R-17/18/23/36/38: tidak ada klaim/statistik/testimonial/aset/fitur baru; angka mengikuti API dan fixture ditandai UI dalam tes/preview saja.
+- Hard Gate PASS, R-24/26/27: click-through per kontrol di atas dijalankan; loading/error/empty dan retry nyata, delete disabled dengan alasan.
+- Hard Gate PASS, R-25/32: pasangan contrast produksi lulus; keyboard Select, Tab/Enter/Escape, focus trap/return, label dan target 44 px diuji.
+- Hard Gate PASS, R-28/33/34/35/37: tidak ada FAQ/script rewrite source/theme toggle; DESIGN.md dan Design Read rencana dipertahankan; build/runtime/console/click-through terverifikasi.
+- Purpose Gate PASS, R-01/04/06/07/08/09/10/12/13/14/19/22: hijau untuk aksi/status nyata, font sistem untuk pembacaan operasional, tabel untuk referensi berkolom; chevron membuka/men-scroll Select, check menyatakan pilihan dan X menutup dialog, semuanya affordance bernama. Shadow hanya overlay; tidak ada gradient/glass/glow/ilustrasi/arrow dekoratif/animasi masuk.
+- Liveliness PASS: ENERGY 1 / RHYTHM 1 / MOTION 1 konsisten; data/form menjadi focal point, jarak 16 px field/24 px blok memberi struktur, satu aksen terbatas, motif kamera-titik-satuan-model ground memberi konteks SIVERA.
+- Craftsmanship/Quality Locks PASS, C-1..C-5 dan R-05/11/15/16/20/21/29/30/31: setiap blok mengikuti operasi yang ada, CTA spesifik, radius field/panel konsisten, light-only untuk operasi citra, tidak meniru shell produk lain; alasan warna/font/layout/jarak/panel/ikon ditulis di atas. PASS hanya scope UI yang diuji, bukan backend live, Firefox/WebKit atau shell legacy P7.
