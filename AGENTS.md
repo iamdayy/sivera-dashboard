@@ -16,6 +16,8 @@ Build and maintain the SIVERA web dashboard in this repository (`iamdayy/sivera-
 
 Use the versions and scripts in `package.json`: Vue 3, TypeScript, Vite, Vue Router, Pinia, Tailwind CSS v4, Vitest, Vue Test Utils, and Playwright. Bun is expected.
 
+**UI Components**: shadcn/vue (installed via `npx shadcn-vue@latest add <component>`). Use the registry components as building blocks; customize via Tailwind config and component props. Do not add Vuetify, PrimeVue, or another UI framework without explicit justification.
+
 Useful commands:
 - `bun install`
 - `bun dev`

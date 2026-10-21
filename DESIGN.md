@@ -18,7 +18,7 @@ Use the stack already present in `package.json`:
 - Playwright for end-to-end tests
 - Bun as the expected package manager/runtime
 
-Do not introduce Vuetify or another component framework without a clear requirement and an explicit migration plan.
+**UI Component Library**: shadcn/vue (registry-based, copy-paste components). Install via `npx shadcn-vue@latest add <component>`. Use registry components as building blocks; customize via Tailwind config and component props. Do not introduce Vuetify, PrimeVue, or another component framework without a clear requirement and an explicit migration plan.
 
 ## 3. Product principles
 
