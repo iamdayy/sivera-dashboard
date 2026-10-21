@@ -1,151 +1,158 @@
 <template>
-  <div class="space-y-6 max-w-3xl">
-    <h1 class="text-2xl font-bold text-gray-900">Pengaturan</h1>
+  <div class="mx-auto w-full max-w-3xl space-y-6">
+    <h1 class="text-2xl font-bold">Pengaturan</h1>
 
-    <!-- API Configuration -->
-    <Card class="p-6">
-      <h2 class="text-lg font-semibold mb-4">Konfigurasi API</h2>
-
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Base URL API</label>
-          <input v-model="apiBaseUrl" type="text"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="http://localhost:8000/api/v1" />
-          <p class="mt-1 text-sm text-gray-500">URL dasar untuk mengakses API backend (include /api/v1 prefix)</p>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-          <div class="flex gap-2">
-            <input v-model="apiKey" :type="showApiKey ? 'text' : 'password'"
-              class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Masukkan API Key Anda" />
-            <Button variant="secondary" @click="showApiKey = !showApiKey" size="sm">
-              {{ showApiKey ? 'Sembunyikan' : 'Tampilkan' }}
-            </Button>
+    <Card>
+      <CardHeader>
+        <CardTitle>Konfigurasi API</CardTitle>
+        <CardDescription>Atur alamat backend dan periksa akses API Key Anda.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form class="space-y-4" @submit.prevent="saveApiConfig">
+          <div class="space-y-2">
+            <Label for="api-base-url">Base URL API</Label>
+            <Input
+              id="api-base-url"
+              v-model="apiBaseUrl"
+              type="url"
+              required
+              aria-describedby="api-base-help"
+              placeholder="http://localhost:8000/api/v1"
+            />
+            <p id="api-base-help" class="text-sm text-muted-foreground">
+              Gunakan URL dasar sesuai konfigurasi backend, termasuk prefix jika ada.
+            </p>
           </div>
-          <p class="mt-1 text-sm text-gray-500">API Key untuk autentikasi (header: X-API-Key)</p>
-        </div>
 
-        <div>
-          <Button variant="primary" @click="saveApiConfig" :isLoading="savingConfig">
-            Simpan Konfigurasi
+          <div class="space-y-2">
+            <Label for="api-key">API Key</Label>
+            <div class="flex flex-col gap-2 min-[400px]:flex-row">
+              <Input
+                id="api-key"
+                v-model="apiKey"
+                :type="showApiKey ? 'text' : 'password'"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="api-key-help"
+                placeholder="Masukkan API Key Anda"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                :aria-pressed="showApiKey"
+                aria-controls="api-key"
+                @click="showApiKey = !showApiKey"
+                >{{ showApiKey ? 'Sembunyikan' : 'Tampilkan' }}</Button
+              >
+            </div>
+            <p id="api-key-help" class="text-sm text-muted-foreground">
+              Dikirim melalui header X-API-Key dan disimpan di browser ini. Jangan gunakan key
+              produksi berprivilege tinggi.
+            </p>
+          </div>
+
+          <Button type="submit" :disabled="savingConfig" :aria-busy="savingConfig">
+            {{ savingConfig ? 'Memvalidasi konfigurasi...' : 'Simpan Konfigurasi' }}
           </Button>
-        </div>
-
-        <div v-if="connectionTested" class="p-3 rounded-md"
-          :class="connectionSuccess ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
-          {{ connectionMessage }}
-        </div>
-      </div>
+          <Alert
+            v-if="connectionTested"
+            :variant="connectionSuccess ? 'default' : 'destructive'"
+            aria-live="polite"
+          >
+            <AlertTitle>{{
+              connectionSuccess ? 'Akses API terverifikasi' : 'Akses API belum terverifikasi'
+            }}</AlertTitle>
+            <AlertDescription>{{ connectionMessage }}</AlertDescription>
+          </Alert>
+        </form>
+      </CardContent>
     </Card>
 
-    <!-- About Section -->
-    <Card class="p-6">
-      <h2 class="text-lg font-semibold mb-4">Tentang</h2>
-
-      <div class="space-y-3 text-sm text-gray-600">
-        <div class="flex justify-between">
-          <span>Versi Aplikasi</span>
-          <span class="font-mono">0.1.0</span>
-        </div>
-        <div class="flex justify-between">
-          <span>Build</span>
-          <span class="font-mono">Development</span>
-        </div>
-        <div class="flex justify-between">
-          <span>Framework</span>
-          <span class="font-mono">Vue 3 + Vite + Tailwind CSS</span>
-        </div>
-        <div class="flex justify-between">
-          <span>API Backend</span>
-          <span class="font-mono">FastAPI (Sivera API)</span>
-        </div>
-        <div class="flex justify-between">
-          <span>Dokumentasi API</span>
-          <a :href="apiDocsUrl" target="_blank" class="text-primary hover:underline font-mono">
-            /docs (Swagger UI)
-          </a>
-        </div>
-      </div>
+    <Card>
+      <CardHeader><CardTitle>Tentang</CardTitle></CardHeader>
+      <CardContent>
+        <dl class="space-y-3 text-sm">
+          <div
+            v-for="item in about"
+            :key="item.label"
+            class="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-4"
+          >
+            <dt class="text-muted-foreground">{{ item.label }}</dt>
+            <dd class="sm:text-right">{{ item.value }}</dd>
+          </div>
+          <div class="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-4">
+            <dt class="text-muted-foreground">Dokumentasi API</dt>
+            <dd class="sm:text-right">
+              <a
+                :href="apiDocsUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex min-h-11 items-center text-primary underline underline-offset-4"
+                >/docs (Swagger UI)</a
+              >
+            </dd>
+          </div>
+        </dl>
+      </CardContent>
     </Card>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
+import { computed, ref } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { computed, onMounted, ref, watch } from 'vue'
-import { setBaseUrl, checkHealth } from '@/services/api'
+import { setBaseUrl } from '@/services/api'
+import { version } from '../../../package.json'
 
 const apiStore = useApiStore()
 const toast = useToast()
-
-const apiBaseUrl = ref(localStorage.getItem('api_base_url') || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
+const apiBaseUrl = ref(
+  localStorage.getItem('api_base_url') ||
+    import.meta.env.VITE_API_BASE_URL ||
+    'http://localhost:8000',
+)
 const apiKey = ref(localStorage.getItem('api_key') || '')
 const showApiKey = ref(false)
 const savingConfig = ref(false)
 const connectionTested = ref(false)
 const connectionSuccess = ref(false)
 const connectionMessage = ref('')
+const about = [
+  { label: 'Versi Aplikasi', value: version },
+  { label: 'Build', value: import.meta.env.DEV ? 'Development' : 'Production' },
+  { label: 'Framework', value: 'Vue 3 + Vite + Tailwind CSS' },
+  { label: 'API Backend', value: 'FastAPI (Sivera API)' },
+]
+const apiDocsUrl = computed(
+  () => `${apiBaseUrl.value.replace(/\/+$/, '').replace(/\/api\/v1$/, '')}/docs`,
+)
 
-const apiDocsUrl = computed(() => {
-  const base = apiBaseUrl.value.replace(/\/+$/, '')
-  // Swagger UI is served at /docs (not /api/v1/docs)
-  const docsBase = base.replace(/\/api\/v1$/, '')
-  return `${docsBase}/docs`
-})
-
-const saveApiConfig = async () => {
+async function saveApiConfig() {
+  if (savingConfig.value) return
   savingConfig.value = true
   connectionTested.value = false
-
   try {
     setBaseUrl(apiBaseUrl.value)
-
-    if (apiKey.value) {
-      apiStore.setApiKey(apiKey.value)
-    } else {
-      apiStore.clearApiKey()
-    }
-
-    // Test API key validity (not just connectivity)
+    if (apiKey.value) apiStore.setApiKey(apiKey.value)
+    else apiStore.clearApiKey()
     const keyTest = await apiStore.testApiKey()
-    if (keyTest.valid) {
-      connectionSuccess.value = true
-      connectionMessage.value = keyTest.message
-      toast.success('Konfigurasi disimpan', {
-        description: keyTest.message,
-      })
-    } else {
-      connectionSuccess.value = false
-      connectionMessage.value = keyTest.message
-      toast.error('API Key tidak valid', {
-        description: keyTest.message,
-      })
-    }
-  } catch (error: unknown) {
+    connectionSuccess.value = keyTest.valid
+    connectionMessage.value = keyTest.message
+    if (keyTest.valid) toast.success('Konfigurasi disimpan', { description: keyTest.message })
+    else toast.error('Akses API belum terverifikasi', { description: keyTest.message })
+  } catch {
     connectionSuccess.value = false
-    const err = error as { response?: { data?: { detail?: string } }; message?: string }
-    connectionMessage.value = 'Gagal memvalidasi API Key: ' + (err.response?.data?.detail || err.message)
-    toast.error('Gagal memvalidasi API Key', {
-      description: err.response?.data?.detail || err.message,
-    })
+    connectionMessage.value = 'Gagal memvalidasi konfigurasi. Periksa URL API dan coba kembali.'
+    toast.error(connectionMessage.value)
   } finally {
     connectionTested.value = true
     savingConfig.value = false
   }
 }
-
-onMounted(() => {
-  // Initialize from localStorage
-  const savedApiUrl = localStorage.getItem('api_base_url')
-  if (savedApiUrl) apiBaseUrl.value = savedApiUrl
-
-  const savedApiKey = localStorage.getItem('api_key')
-  if (savedApiKey) apiKey.value = savedApiKey
-})
 </script>
