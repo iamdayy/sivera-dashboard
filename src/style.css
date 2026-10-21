@@ -1,94 +1,87 @@
 @import 'tailwindcss';
 
-@theme {
-  /* Calm technical operations dashboard — neutral surfaces, restrained green accent */
-  --color-primary: 142 76% 36%;
-  --color-primary-hover: 142 76% 30%;
-  --color-primary-light: 142 40% 95%;
-
-  --color-destructive: 0 72% 51%;
-  --color-destructive-hover: 0 72% 45%;
-  --color-destructive-light: 0 40% 95%;
-
-  --color-muted: 210 20% 94%;
-  --color-muted-foreground: 215 14% 45%;
-
-  --color-border: 214 32% 88%;
-  --color-input: 214 32% 88%;
-  --color-ring: 142 76% 36%;
-
-  --color-background: 0 0% 100%;
-  --color-foreground: 222 84% 5%;
-  --color-card: 0 0% 100%;
-  --color-card-foreground: 222 84% 5%;
-  --color-popover: 0 0% 100%;
-  --color-popover-foreground: 222 84% 5%;
-  --color-secondary: 210 20% 96%;
-  --color-secondary-foreground: 222 84% 5%;
-  --color-accent: 210 20% 96%;
-  --color-accent-foreground: 222 84% 5%;
-
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #166534;
+  --primary-foreground: #ffffff;
+  --primary-hover: #14532d;
+  --primary-light: #f0fdf4;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #1f2937;
+  --muted: #f3f4f6;
+  --muted-foreground: #4b5563;
+  --accent: #f3f4f6;
+  --accent-foreground: #111827;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-hover: #991b1b;
+  --destructive-light: #fef2f2;
+  --border: #e5e7eb;
+  --input: #858585;
+  --ring: #166534;
   --radius: 0.375rem;
+  --toast-bg: var(--popover);
+  --toast-color: var(--popover-foreground);
+  --toast-border: var(--border);
 }
 
-.dark {
-  --color-primary: 142 60% 50%;
-  --color-primary-hover: 142 60% 45%;
-  --color-primary-light: 142 30% 20%;
-
-  --color-destructive: 0 63% 40%;
-  --color-destructive-hover: 0 63% 35%;
-  --color-destructive-light: 0 30% 15%;
-
-  --color-muted: 217 33% 17%;
-  --color-muted-foreground: 215 20% 65%;
-
-  --color-border: 217 33% 17%;
-  --color-input: 217 33% 17%;
-  --color-ring: 142 60% 50%;
-
-  --color-background: 222 84% 5%;
-  --color-foreground: 210 20% 98%;
-  --color-card: 222 84% 5%;
-  --color-card-foreground: 210 20% 98%;
-  --color-popover: 222 84% 5%;
-  --color-popover-foreground: 210 20% 98%;
-  --color-secondary: 217 33% 17%;
-  --color-secondary-foreground: 210 20% 98%;
-  --color-accent: 217 33% 17%;
-  --color-accent-foreground: 210 20% 98%;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-light: var(--primary-light);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-light: var(--destructive-light);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 @layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
-/* Toast variables (unscoped, applied to :root in global CSS) */
-:root {
-  --toast-bg: hsl(var(--color-card));
-  --toast-color: hsl(var(--color-card-foreground));
-  --toast-border: hsl(var(--color-border));
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
-.dark {
-  --toast-bg: hsl(var(--color-card));
-  --toast-color: hsl(var(--color-card-foreground));
-  --toast-border: hsl(var(--color-border));
-}
-
-/* Motion — reduced motion fallback */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Focus visible — never remove without replacement */
-:focus-visible {
-  outline: 2px solid hsl(var(--color-ring));
-  outline-offset: 2px;
 }
