@@ -22,7 +22,7 @@ Pertahankan Vue/TypeScript/Pinia/Axios/shadcn-vue/Bun dan shell existing. Dashbo
 - [x] B1. Stream service & WHEP signaling: `src/services/streams.ts`, `src/services/whep.ts` dengan trusted endpoints, authenticated OPTIONS/POST/PATCH/DELETE, ICE Link parsing, ETag/If-Match, serial PATCH queue, ownership cleanup, late-response guards, no POST retry. Unit tests 57 passed; E2E running.
 - [x] B2. Receive-only player component, ICE candidate buffering, reconnect button, modal integration, Cameras.vue live preview. Gate: decoded frames, reconnect, no leaked peers.
 - [x] C. Capture/compute: service dan polling typed; state capture/compute independen; counters/rejected/gallery offset; stop menunggu terminal; 409/resume UUID diverifikasi; compute dan inspect lalu aktivasi eksplisit. Upload existing tetap synchronous 201 auto-active. C membutuhkan enabled stream, bukan playback browser.
-- [ ] D. Snapshot/readiness/coordinates: POST terpisah dari latest GET; freshness/error/source context; raw snapshot bukan ground undistorted; natural-pixel click mapping dan marker responsif untuk preview undistorted; input manual nyata; compatibility IDs; depth scale unknown dan backend otoritatif. Scene-undistortion API adalah dependency backend terpisah.
+- [x] D. Snapshot/readiness/coordinates: POST terpisah dari latest GET; freshness/error/source context; raw snapshot bukan ground undistorted; natural-pixel click mapping dan marker responsif untuk preview undistorted; input manual nyata; compatibility IDs; depth scale unknown dan backend otoritatif. Scene-undistortion API adalah dependency backend terpisah.
 - [ ] E. Prediction: payload tiga sumber; RTSP tanpa file/timestamp; confidence zero dan omitted/[]/subset outputs; tipe output valid; polling non-overlap/abort/stale/error/backoff; persisted paginated history; detail job aktif; hapus kontrol delete yang tidak punya endpoint; authenticated image/JSON/NPZ; pinned IDs dan nullable units.
 - [ ] F. Verifikasi lintas workflow: unit/component/e2e, keyboard/focus/dialog/mobile/tablet/desktop, origin/key/camera races, live disposable backend dan browser media jika tersedia.
 
@@ -166,6 +166,45 @@ Mock API memverifikasi kontrak protocol, bukan video nyata.
 - Rejection counts badge grid
 
 **Gate C tidak mengklaim capture/compute nyata berjalan.** Mock API membuktikan perilaku frontend; capture/compute nyata memerlukan stream enabled, MediaMTX, worker, dan disposable backend.
+
+**Checks:**
+| Pemeriksaan | Hasil |
+|---|---|
+| `bun run test:unit --run` | 169 passed, 12 files |
+| `bun run type-check` | PASS |
+| `bun run build` | PASS |
+| `bun run test:e2e --project=chromium --project=firefox` | 176 passed, 2 live-key skipped |
+
+Foundation selesai sebelum UI media/capture/RTSP prediction diaktifkan. PASS ini mencakup perubahan fase A, bukan klaim seluruh workflow legacy, playback, capture, atau inference selesai. Fase B berikutnya dimulai dari service/protocol sebelum integrasi player.
+
+### D ditutup: Snapshot/readiness/coordinates (23 Oktober 2026)
+
+**Komponen baru:**
+- `src/services/snapshots.ts` — `takeSnapshot` (POST `/snapshots`), `getLatestSnapshot` (GET `/snapshots/latest` dengan `max_frame_age_sec`), `getSnapshotImageBlob` (authenticated fetch via artifacts), `isSnapshotFresh`
+- `src/services/readiness.ts` — `checkReadiness(cameraId)` memvalidasi: active calibration, intrinsics original (k_original/resolution), active ground model, calibration ID match; return `missing` codes + labels
+- `src/views/Dashboard/Cameras.vue` — tombol **Ambil Snapshot**, dialog snapshot: loading/error/empty, `AuthenticatedArtifact` preview, metadata (dimensi, ukuran, timestamp, ID), actions **Ambil Snapshot Baru** / **Refresh Snapshot**, focus restoration
+
+**Fitur `snapshots.ts`:**
+- `takeSnapshot`: POST synchronous 201, return `SnapshotResponse` (id, width, height, size_bytes, captured_at, image_url)
+- `getLatestSnapshot`: GET dengan `max_frame_age_sec` (1..300), error handling `snapshot_not_found`, `snapshot_stale`, `snapshot_source_changed`, `snapshot_requires_enabled_stream`
+- `getSnapshotImageBlob`: authenticated fetch via `artifacts.ts`, MIME validation, redirect rejection
+- `isSnapshotFresh`: helper age check
+
+**Fitur `readiness.ts`:**
+- `checkReadiness(cameraId)`: GET camera detail → active calibration → cek intrinsics (`k_original`, `resolution_w/h`) → active ground model → cek calibration ID match
+- Return `PrerequisiteCheck`: booleans, `missing` codes array, IDs
+- `getMissingPrerequisiteLabels`: mapping code → label Bahasa Indonesia
+
+**Integrasi `Cameras.vue`:**
+- Page header flex-wrap untuk responsivitas
+- Kolom Aksi: **Ambil Snapshot** (disabled jika stream tidak enabled)
+- Dialog snapshot: loading → error/retry → preview + metadata grid → actions: **Ambil Snapshot Baru** (default variant) / **Refresh Snapshot** (outline)
+- Focus restoration on dialog close
+
+**Gate D tidak mengklaim:**
+- Depth scale readiness (API publik belum ada)
+- Scene undistortion API (dependency backend terpisah)
+- Koordinat ground dari raw snapshot (harus undistorted, bukan natural pixel)
 
 **Checks:**
 | Pemeriksaan | Hasil |

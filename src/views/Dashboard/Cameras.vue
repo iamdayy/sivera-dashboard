@@ -91,6 +91,13 @@
                   >
                   <Button
                     variant="ghost"
+                    :aria-label="`Ambil Snapshot ${camera.name}`"
+                    @click="openSnapshot(camera, $event)"
+                    :disabled="!camera.stream_enabled || loading"
+                  >Ambil Snapshot</Button
+                  >
+                  <Button
+                    variant="ghost"
                     :aria-label="`Edit ${camera.name}`"
                     @click="editCamera(camera, $event)"
                   >Edit</Button
@@ -328,6 +335,60 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog :open="isSnapshotDialogOpen" @update:open="setSnapshotDialogOpen">
+      <DialogContent class="max-w-2xl max-h-[90vh]" :show-close-button="!snapshotLoading" @close-auto-focus="restoreSnapshotFocus">
+        <DialogHeader>
+          <DialogTitle>Snapshot: {{ snapshotCamera?.name }}</DialogTitle>
+          <DialogDescription>
+            Snapshot terbaru dari kamera. Gunakan "Ambil Snapshot Baru" untuk memotret ulang.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <Alert v-if="snapshotError" variant="destructive">
+            <AlertTitle>Gagal memuat snapshot</AlertTitle>
+            <AlertDescription>{{ snapshotError }}</AlertDescription>
+          </Alert>
+
+          <div v-if="snapshotLoading" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
+            <div class="text-center text-white">
+              <div class="animate-spin rounded-full h-10 w-10 border-3 border-primary border-t-transparent mx-auto mb-3" />
+              <p>{{ latestSnapshot ? 'Memuat snapshot...' : 'Mengambil snapshot baru...' }}</p>
+            </div>
+          </div>
+
+          <div v-else-if="snapshotError || !latestSnapshot" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center p-4">
+            <div class="text-center text-white">
+              <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p class="mb-3">{{ snapshotError || 'Belum ada snapshot. Klik "Ambil Snapshot Baru" untuk memotret.' }}</p>
+              <Button variant="default" @click="takeNewSnapshot">{{ latestSnapshot ? 'Ambil Snapshot Baru' : 'Ambil Snapshot' }}</Button>
+            </div>
+          </div>
+
+          <div v-else class="space-y-4">
+            <AuthenticatedArtifact
+              :path="latestSnapshot!.image_url"
+              label="Snapshot"
+            />
+            <div class="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+              <div><span class="text-foreground">Dimensi: </span>{{ latestSnapshot!.width }}x{{ latestSnapshot!.height }}</div>
+              <div><span class="text-foreground">Ukuran: </span>{{ (latestSnapshot!.size_bytes / 1024).toFixed(1) }} KB</div>
+              <div><span class="text-foreground">Diambil: </span>{{ formatDate(latestSnapshot!.captured_at) }}</div>
+              <div><span class="text-foreground">ID: </span><code class="break-all">{{ latestSnapshot!.id }}</code></div>
+            </div>
+            <div class="flex gap-2">
+              <Button variant="default" @click="takeNewSnapshot">Ambil Snapshot Baru</Button>
+              <Button variant="outline" @click="loadLatestSnapshot">Refresh Snapshot</Button>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="setSnapshotDialogOpen(false)">Tutup</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -377,8 +438,10 @@ import {
 } from '@/services/cameras'
 import { cameraPayload, createCameraForm } from '@/lib/camera-form'
 import { getStream } from '@/services/streams'
-import type { Camera, StreamResponse } from '@/types'
+import { takeSnapshot, getLatestSnapshot, getSnapshotImageBlob } from '@/services/snapshots'
+import type { Camera, StreamResponse, SnapshotResponse } from '@/types'
 import WhepPlayer from '@/components/media/WhepPlayer.vue'
+import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -409,6 +472,13 @@ const streamState = ref<StreamResponse | null>(null)
 const previewLoading = ref(false)
 const previewError = ref('')
 let previewTrigger: HTMLElement | null = null
+
+const isSnapshotDialogOpen = ref(false)
+const snapshotCamera = ref<Camera | null>(null)
+const latestSnapshot = ref<SnapshotResponse | null>(null)
+const snapshotLoading = ref(false)
+const snapshotError = ref('')
+let snapshotTrigger: HTMLElement | null = null
 
 const apiContext = computed(() => apiStore.connectionContext)
 
@@ -622,6 +692,63 @@ function restorePreviewFocus(event: Event) {
   event.preventDefault()
   const target = previewTrigger?.isConnected ? previewTrigger : view.value?.querySelector<HTMLElement>('[data-camera-create]')
   target?.focus()
+}
+
+async function loadLatestSnapshot() {
+  if (!snapshotCamera.value) return
+  snapshotLoading.value = true
+  snapshotError.value = ''
+  try {
+    latestSnapshot.value = await getLatestSnapshot(snapshotCamera.value.id, { max_frame_age_sec: 30 })
+  } catch (error) {
+    snapshotError.value = errorMessage(error)
+  } finally {
+    snapshotLoading.value = false
+  }
+}
+
+async function takeNewSnapshot() {
+  if (!snapshotCamera.value || snapshotLoading.value) return
+  snapshotLoading.value = true
+  snapshotError.value = ''
+  try {
+    const snapshot = await takeSnapshot(snapshotCamera.value.id)
+    latestSnapshot.value = snapshot
+    toast.success('Snapshot berhasil diambil')
+  } catch (error) {
+    snapshotError.value = errorMessage(error)
+  } finally {
+    snapshotLoading.value = false
+  }
+}
+
+function openSnapshot(camera: Camera, event: MouseEvent) {
+  snapshotTrigger = event.currentTarget as HTMLElement
+  snapshotCamera.value = camera
+  latestSnapshot.value = null
+  snapshotError.value = ''
+  isSnapshotDialogOpen.value = true
+  loadLatestSnapshot()
+}
+
+function setSnapshotDialogOpen(open: boolean) {
+  if (snapshotLoading.value) return
+  isSnapshotDialogOpen.value = open
+  if (!open) {
+    snapshotCamera.value = null
+    latestSnapshot.value = null
+    snapshotError.value = ''
+  }
+}
+
+function restoreSnapshotFocus(event: Event) {
+  event.preventDefault()
+  const target = snapshotTrigger?.isConnected ? snapshotTrigger : view.value?.querySelector<HTMLElement>('[data-camera-create]')
+  target?.focus()
+}
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 onMounted(fetchCameras)
