@@ -67,5 +67,7 @@ export const useApiStore = defineStore('api', () => {
     }
   }
 
-  return { apiKey, hasApiKey, isAuthenticated, origin, generation, configurationNotice, accessStatus, connectionStatus, configure, setApiKey, clearApiKey, testConnection, testApiKey }
+  const connectionContext = computed(() => getConnectionContext())
+
+  return { apiKey, hasApiKey, isAuthenticated, origin, generation, configurationNotice, accessStatus, connectionStatus, configure, setApiKey, clearApiKey, testConnection, testApiKey, connectionContext }
 })

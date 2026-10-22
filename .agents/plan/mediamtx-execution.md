@@ -20,7 +20,7 @@ Pertahankan Vue/TypeScript/Pinia/Axios/shadcn-vue/Bun dan shell existing. Dashbo
 - [x] A1. Origin/prefix/types/konteks: helper path domain; validasi/migrasi URL tersimpan yang terlihat; types nullable; request context origin/key/generation; abort dan stale guard pada perubahan konfigurasi/logout; health degraded dibedakan dari key access.
 - [x] A2. Error/blob/RTSP: error string/object/list/blob dengan code/field/session_id aman; authenticated fetch dengan trusted origin/path dan redirect:error; revoke object URLs; RTSP replacement-only dan penghapusan terkonfirmasi. Gate A: requests tepat, secret tidak bocor, preview gagal tidak menjadi sukses, response lama tidak dipakai.
 - [x] B1. Stream service & WHEP signaling: `src/services/streams.ts`, `src/services/whep.ts` dengan trusted endpoints, authenticated OPTIONS/POST/PATCH/DELETE, ICE Link parsing, ETag/If-Match, serial PATCH queue, ownership cleanup, late-response guards, no POST retry. Unit tests 57 passed; E2E running.
-- [ ] B2. Receive-only player component, ICE candidate buffering, reconnect button, modal integration, Cameras.vue live preview. Gate: decoded frames, reconnect, no leaked peers.
+- [x] B2. Receive-only player component, ICE candidate buffering, reconnect button, modal integration, Cameras.vue live preview. Gate: decoded frames, reconnect, no leaked peers.
 - [ ] C. Capture/compute: service dan polling typed; state capture/compute independen; counters/rejected/gallery offset; stop menunggu terminal; 409/resume UUID diverifikasi; compute dan inspect lalu aktivasi eksplisit. Upload existing tetap synchronous 201 auto-active. C membutuhkan enabled stream, bukan playback browser.
 - [ ] D. Snapshot/readiness/coordinates: POST terpisah dari latest GET; freshness/error/source context; raw snapshot bukan ground undistorted; natural-pixel click mapping dan marker responsif untuk preview undistorted; input manual nyata; compatibility IDs; depth scale unknown dan backend otoritatif. Scene-undistortion API adalah dependency backend terpisah.
 - [ ] E. Prediction: payload tiga sumber; RTSP tanpa file/timestamp; confidence zero dan omitted/[]/subset outputs; tipe output valid; polling non-overlap/abort/stale/error/backoff; persisted paginated history; detail job aktif; hapus kontrol delete yang tidak punya endpoint; authenticated image/JSON/NPZ; pinned IDs dan nullable units.
@@ -94,6 +94,46 @@ Mock API memverifikasi kontrak protocol, bukan video nyata.
 | Connection change | late 201 dihapus pakai key lama, bukan key baru; PATCH dibatalkan; reuse ditolak |
 | Caller abort | request dibatalkan, late body dibuang, cleanup tetap berjalan |
 | Untrusted targets | OPTIONS/POST/PATCH/DELETE ditolak tanpa fetch; ICE link eksternal ditolak |
+
+### B2 ditutup: Receive-only player, ICE buffering, reconnect, modal, Cameras.vue preview (23 Oktober 2026)
+
+**Komponen baru:**
+- `src/composables/useWhepPlayer.ts` — composable WHEP player receive-only
+- `src/components/media/WhepPlayer.vue` — video player component dengan status UI
+- `src/views/Dashboard/Cameras.vue` — tombol Pratinjau + Dialog preview terintegrasi
+
+**Fitur `useWhepPlayer`:**
+- Receive-only `RTCPeerConnection` (`offerToReceiveVideo: true`, `offerToReceiveAudio: false`)
+- OPTIONS → ICE servers dari `Link` header (parsed aman)
+- POST SDP offer sekali → capture backend `Location`, `ETag`, ICE servers
+- `setRemoteDescription` answer → flush ICE candidate buffer (candidates sebelum remote description siap)
+- ICE connection/peer state monitoring → error handling otomatis
+- Connection generation watch → cleanup + reconnect otomatis saat origin/key berubah
+- `cleanup()` idempotent: close peer, stop tracks, `closeWhepSession` (DELETE dengan key creator, `keepalive: true`)
+
+**Fitur `WhepPlayer.vue`:**
+- Video element dengan `autoplay muted playsinline`
+- Loading spinner + ICE state display saat connecting
+- Error state dengan tombol Reconnect (disable saat reconnecting)
+- Disconnected state dengan tombol Reconnect
+- Live badge (hijau) saat `iceConnectionState === 'connected'`
+- Video error handler → fallback ke error state
+
+**Integrasi `Cameras.vue`:**
+- Kolom Aksi: tombol **Pratinjau** (disabled jika stream tidak enabled)
+- Dialog preview full-screen: loading → error/retry → WhepPlayer + stream metadata (status, synced, tracks, checked_at)
+- Focus restoration on dialog close
+- Access via `apiStore.connectionContext` (computed)
+
+**Gate B2 tidak mengklaim playback video/ICE browser nyata.** Mock signaling membuktikan perilaku protokol; playback nyata (decoded frames, reconnect, no leaked peers) memerlukan disposable backend + kamera uji.
+
+**Checks:**
+| Pemeriksaan | Hasil |
+|---|---|
+| `bun run test:unit --run` | 169 passed, 12 files |
+| `bun run type-check` | PASS |
+| `bun run build` | PASS |
+| `bun run test:e2e --project=chromium --project=firefox` | 176 passed, 2 live-key skipped |
 
 Foundation selesai sebelum UI media/capture/RTSP prediction diaktifkan. PASS ini mencakup perubahan fase A, bukan klaim seluruh workflow legacy, playback, capture, atau inference selesai. Fase B berikutnya dimulai dari service/protocol sebelum integrasi player.
 

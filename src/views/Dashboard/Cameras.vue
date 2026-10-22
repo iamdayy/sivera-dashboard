@@ -84,16 +84,23 @@
                 <div class="flex gap-2">
                   <Button
                     variant="ghost"
+                    :aria-label="`Pratinjau ${camera.name}`"
+                    @click="openPreview(camera, $event)"
+                    :disabled="!camera.stream_enabled || loading"
+                  >Pratinjau</Button
+                  >
+                  <Button
+                    variant="ghost"
                     :aria-label="`Edit ${camera.name}`"
                     @click="editCamera(camera, $event)"
-                    >Edit</Button
+                  >Edit</Button
                   >
                   <Button
                     variant="ghost"
                     class="text-destructive hover:text-destructive"
                     :aria-label="`Hapus ${camera.name}`"
                     @click="confirmDelete(camera, $event)"
-                    >Hapus</Button
+                  >Hapus</Button
                   >
                 </div>
               </TableCell>
@@ -277,11 +284,55 @@
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <Dialog :open="isPreviewDialogOpen" @update:open="setPreviewDialogOpen">
+      <DialogContent :show-close-button="!previewLoading" class="max-w-4xl max-h-[90vh]" @close-auto-focus="restorePreviewFocus">
+        <DialogHeader>
+          <DialogTitle>Pratinjau Stream: {{ previewCamera?.name }}</DialogTitle>
+          <DialogDescription>
+            Stream WHEP receive-only. Gunakan tombol Reconnect jika koneksi terputus.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div v-if="previewLoading" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
+            <div class="text-center text-white">
+              <div class="animate-spin rounded-full h-10 w-10 border-3 border-primary border-t-transparent mx-auto mb-3" />
+              <p>Memuat stream...</p>
+            </div>
+          </div>
+          <div v-else-if="previewError || !streamState?.whep_url" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center p-4">
+            <div class="text-center text-white">
+              <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p class="mb-3">{{ previewError || 'Stream tidak tersedia. Aktifkan stream pada kamera ini.' }}</p>
+              <Button variant="outline" @click="loadStream">Coba Lagi</Button>
+            </div>
+          </div>
+          <WhepPlayer
+            v-else
+            :camera-id="previewCamera!.id"
+            :whep-path="streamState!.whep_url!"
+            :context="apiContext"
+            class="aspect-video"
+          />
+          <div v-if="streamState" class="flex gap-4 text-sm text-muted-foreground">
+            <span>Status: <span class="text-foreground capitalize">{{ streamState.status }}</span></span>
+            <span>Synced: <span class="text-foreground">{{ streamState.synced ? 'Ya' : 'Tidak' }}</span></span>
+            <span>Tracks: <span class="text-foreground">{{ streamState.tracks.join(', ') || '—' }}</span></span>
+            <span>Checked: <span class="text-foreground">{{ new Date(streamState.checked_at).toLocaleTimeString() }}</span></span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="setPreviewDialogOpen(false)">Tutup</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -325,7 +376,9 @@ import {
   deleteCamera as apiDeleteCamera,
 } from '@/services/cameras'
 import { cameraPayload, createCameraForm } from '@/lib/camera-form'
-import type { Camera } from '@/types'
+import { getStream } from '@/services/streams'
+import type { Camera, StreamResponse } from '@/types'
+import WhepPlayer from '@/components/media/WhepPlayer.vue'
 
 const apiStore = useApiStore()
 const toast = useToast()
@@ -349,6 +402,15 @@ const isRemoveSourceDialogOpen = ref(false)
 const removingSource = ref(false)
 const removeSourceError = ref('')
 let sourceTrigger: HTMLElement | null = null
+
+const isPreviewDialogOpen = ref(false)
+const previewCamera = ref<Camera | null>(null)
+const streamState = ref<StreamResponse | null>(null)
+const previewLoading = ref(false)
+const previewError = ref('')
+let previewTrigger: HTMLElement | null = null
+
+const apiContext = computed(() => apiStore.connectionContext)
 
 function confirmRemoveSource(event: MouseEvent) {
   sourceTrigger = event.currentTarget as HTMLElement
@@ -522,6 +584,44 @@ async function removeSource() {
   } finally {
     removingSource.value = false
   }
+}
+
+async function loadStream() {
+  if (!previewCamera.value) return
+  previewLoading.value = true
+  previewError.value = ''
+  try {
+    streamState.value = await getStream(previewCamera.value.id)
+  } catch (error) {
+    previewError.value = errorMessage(error)
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function openPreview(camera: Camera, event: MouseEvent) {
+  previewTrigger = event.currentTarget as HTMLElement
+  previewCamera.value = camera
+  streamState.value = null
+  previewError.value = ''
+  isPreviewDialogOpen.value = true
+  loadStream()
+}
+
+function setPreviewDialogOpen(open: boolean) {
+  if (previewLoading.value) return
+  isPreviewDialogOpen.value = open
+  if (!open) {
+    previewCamera.value = null
+    streamState.value = null
+    previewError.value = ''
+  }
+}
+
+function restorePreviewFocus(event: Event) {
+  event.preventDefault()
+  const target = previewTrigger?.isConnected ? previewTrigger : view.value?.querySelector<HTMLElement>('[data-camera-create]')
+  target?.focus()
 }
 
 onMounted(fetchCameras)
