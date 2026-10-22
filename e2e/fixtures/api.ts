@@ -6,6 +6,8 @@ export const camera: Camera = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Kamera fixture UI',
   rtsp_url: null,
+  rtsp_configured: false,
+  stream_enabled: false,
   latitude: null,
   longitude: null,
   resolution_w: 1920,
@@ -22,6 +24,12 @@ export const calibration: Calibration = {
   camera_id: camera.id,
   version: 1,
   k_matrix: [[1000, 0, 960], [0, 1000, 540], [0, 0, 1]],
+  k_original: [[1000, 0, 960], [0, 1000, 540], [0, 0, 1]],
+  k_undist: [[1000, 0, 960], [0, 1000, 540], [0, 0, 1]],
+  resolution_w: 1920,
+  resolution_h: 1080,
+  alpha: 0,
+  per_view_errors: [0],
   dist_coeffs: [0, 0, 0, 0, 0],
   rms_reproj: 0,
   coverage_w: null,
@@ -75,19 +83,19 @@ export async function installApiFixture(page: Page, authenticated = false, items
       await route.fulfill({ status: 501, json: { detail: 'Mutation not configured by this UI test' } })
       return
     }
-    const health: HealthStatus = { status: 'ok', version: 'fixture', database: 'ok' }
+    const health: HealthStatus = { status: 'healthy', version: 'fixture', database: 'connected' }
     const list: CameraList = { items, total: items.length, page: 1, page_size: 20, total_pages: items.length ? 1 : 0 }
     const detail: CameraDetail = { ...camera, active_calibration_id: calibration.id, active_calibration_version: 1, active_calibration_rms: 0 }
     const calibrations: CalibrationList = { items: [calibration], total: 1 }
     const references: GroundReferenceList = { items: [], total: 0 }
     const responses: Record<string, unknown> = {
       '/health': health,
-      '/cameras': list,
-      [`/cameras/${camera.id}`]: detail,
-      [`/cameras/${camera.id}/calibrations`]: calibrations,
-      [`/cameras/${camera.id}/calibrations/active`]: calibration,
-      [`/cameras/${camera.id}/ground-references`]: references,
-      [`/cameras/${camera.id}/predict`]: { ...list, items: [], total: 0, total_pages: 0 },
+      '/api/v1/cameras': list,
+      [`/api/v1/cameras/${camera.id}`]: detail,
+      [`/api/v1/cameras/${camera.id}/calibrations`]: calibrations,
+      [`/api/v1/cameras/${camera.id}/calibrations/active`]: calibration,
+      [`/api/v1/cameras/${camera.id}/ground-references`]: references,
+      [`/api/v1/cameras/${camera.id}/predict`]: { ...list, items: [], total: 0, total_pages: 0 },
     }
     if (path in responses) await route.fulfill({ json: responses[path] })
     else await route.fulfill({ status: 404, json: { detail: 'Not available in this UI fixture' } })
@@ -105,24 +113,24 @@ async function setupGroundReferences(page: Page, items: GroundReference[] = [gro
     loads: [] as string[],
     calls: [] as { method: string; path: string; key: string | undefined; form?: FormData }[],
   }
-  await page.route(new RegExp(`^${apiOrigin}/cameras(?:\\?|$)`), async route => {
+  await page.route(new RegExp(`^${apiOrigin}/api/v1/cameras(?:\\?|$)`), async route => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204 })
     if (state.cameraHold) await state.cameraHold
     if (state.fail.camera) return route.fulfill({ status: 503, json: { detail: 'Camera fixture error' } })
     return route.fallback()
   })
-  await page.route(new RegExp(`^${apiOrigin}/cameras/[^/]+/(ground-references|ground-models|calibrations)(?:/|$)`), async route => {
+  await page.route(new RegExp(`^${apiOrigin}/api/v1/cameras/[^/]+/(ground-references|ground-models|calibrations)(?:/|$)`), async route => {
     const request = route.request()
     const method = request.method()
     if (method === 'OPTIONS') return route.fulfill({ status: 204 })
     const path = new URL(request.url()).pathname
-    const cameraId = path.split('/')[2]!
+    const cameraId = path.split('/')[4]!
     
     if (method === 'GET' && path.endsWith('/calibrations/active')) {
       return route.fulfill({ json: calibration })
     }
     if (method === 'GET' && path.endsWith('/undistort-preview')) {
-      return route.fulfill({ json: { preview_url: `${apiOrigin}/returned-preview.png`, original_url: `${apiOrigin}/returned-original.png`, resolution: [1920, 1080] } })
+      return route.fulfill({ json: { preview_url: `${apiOrigin}/files/returned-preview.png`, original_size: [1920, 1080], undistorted_size: [1920, 1080], k_undist: calibration.k_matrix } })
     }
     if (method === 'GET' && path.endsWith('/ground-references')) {
       state.loads.push(cameraId)
@@ -169,26 +177,26 @@ async function setupGroundReferences(page: Page, items: GroundReference[] = [gro
     }
     if (method === 'POST' && path.endsWith('/activate')) {
       if (state.fail.activate) return route.fulfill({ status: 403, json: { detail: 'Activation fixture error' } })
-      const id = path.split('/')[4]
+      const id = path.split('/')[6]
       state.items = state.items.map(item => item.camera_id === cameraId ? { ...item, is_active: item.id === id } : item)
       return route.fulfill({ json: { ...state.items.find(i => i.id === id), is_active: true } })
     }
     if (method === 'GET' && path.includes('/bev-preview')) {
       if (state.fail.bev) return route.fulfill({ status: 404, json: { detail: 'BEV preview fixture error' } })
       return route.fulfill({ json: {
-        bev_image_url: `${apiOrigin}/returned-bev.png`,
-        bev_mask_url: `${apiOrigin}/returned-bev-mask.png`,
-        bev_overlay_url: `${apiOrigin}/returned-bev-overlay.png`,
+        bev_image_url: `${apiOrigin}/files/returned-bev.png`,
+        bev_mask_url: `${apiOrigin}/files/returned-bev-mask.png`,
+        bev_overlay_url: `${apiOrigin}/files/returned-bev-overlay.png`,
         bev_info: { width_px: 400, height_px: 400, ppm: 200 },
       }})
     }
     return route.fallback()
   })
 
-  await page.route(`${apiOrigin}/returned-preview.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
-  await page.route(`${apiOrigin}/returned-bev.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
-  await page.route(`${apiOrigin}/returned-bev-mask.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
-  await page.route(`${apiOrigin}/returned-bev-overlay.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
+  await page.route(`${apiOrigin}/files/returned-preview.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
+  await page.route(`${apiOrigin}/files/returned-bev.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
+  await page.route(`${apiOrigin}/files/returned-bev-mask.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
+  await page.route(`${apiOrigin}/files/returned-bev-overlay.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
 
   return state
 }

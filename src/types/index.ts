@@ -4,7 +4,9 @@
 export interface Camera {
   id: string
   name: string
-  rtsp_url: string | null
+  rtsp_url: null
+  rtsp_configured: boolean
+  stream_enabled: boolean
   latitude: number | null
   longitude: number | null
   resolution_w: number
@@ -49,6 +51,12 @@ export interface Calibration {
   camera_id: string
   version: number
   k_matrix: number[][]
+  k_original: number[][] | null
+  k_undist: number[][] | null
+  resolution_w: number | null
+  resolution_h: number | null
+  alpha: number | null
+  per_view_errors: number[] | null
   dist_coeffs: number[]
   rms_reproj: number | null
   coverage_w: number | null
@@ -94,13 +102,17 @@ export interface PredictionJob {
   calibration_id: string
   ground_model_id: string
   depth_scale_id: string
-  status: PredictionJobStatus
-  source_type: PredictionSourceType
+  status: string
+  source_type: string
   source_path: string | null
   source_ts: string | null
+  max_frame_age_sec: number
+  volume_cell_m: number
+  volume_min_pts_per_cell: number
   seg_model: string | null
   seg_conf: number
   seg_classes: string[] | null
+  return_outputs: string[] | null
   result: Record<string, unknown> | null
   error_msg: string | null
   started_at: string | null
@@ -167,4 +179,88 @@ export interface PredictionPrerequisites {
   has_active_calibration: boolean
   has_active_ground_model: boolean
   missing: string[]
+}
+
+export type StreamStatus = 'disabled' | 'idle' | 'online' | 'offline' | 'unknown'
+
+export interface StreamResponse {
+  camera_id: string
+  enabled: boolean
+  status: string
+  synced: boolean
+  whep_url: string | null
+  tracks: string[]
+  checked_at: string
+}
+
+export type CaptureStatus = 'queued' | 'running' | 'stopping' | 'completed' | 'stopped' | 'expired' | 'failed'
+export type CaptureComputeStatus = 'none' | 'queued' | 'running' | 'done' | 'failed'
+
+export interface CaptureCreate {
+  chessboard_cols: number
+  chessboard_rows: number
+  square_m: number
+  interval_sec: number
+  target_images: number
+  max_duration_sec: number
+  auto_calibrate: boolean
+}
+
+export interface CaptureResponse extends CaptureCreate {
+  session_id: string
+  camera_id: string
+  status: string
+  selection_version: number
+  accepted: number
+  rejected: number
+  rejection_counts: Record<string, number>
+  compute_status: string
+  compute_error_code: string | null
+  compute_requested_at: string | null
+  compute_started_at: string | null
+  compute_completed_at: string | null
+  result_calibration_id: string | null
+  attempted: number
+  captured: number
+  failed_attempts: number
+  resolution_w: number | null
+  resolution_h: number | null
+  error_code: string | null
+  finish_reason: string | null
+  created_at: string
+  deadline_at: string
+  started_at: string | null
+  completed_at: string | null
+  heartbeat_at: string | null
+  last_capture_at: string | null
+}
+
+export interface CaptureImageResponse {
+  id: string
+  sequence: number
+  width: number
+  height: number
+  size_bytes: number
+  captured_at: string
+  download_url: string
+  quality_status: string
+  rejection_reason: string | null
+  sharpness: number | null
+  corners: number[][] | null
+  preview_url: string | null
+}
+
+export interface CaptureImageList {
+  items: CaptureImageResponse[]
+  total: number
+}
+
+export interface SnapshotResponse {
+  id: string
+  camera_id: string
+  width: number
+  height: number
+  size_bytes: number
+  captured_at: string
+  image_url: string
 }

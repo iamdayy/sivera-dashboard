@@ -1,9 +1,10 @@
-import { apiClient, normalizeApiError, artifactUrl } from './api'
+import { apiClient, cameraPath, getConnectionContext, assertCurrentConnection, normalizeApiError } from './api'
+import { fetchArtifactBlob, requireImageBlob } from './artifacts'
 import type { Calibration, CalibrationList } from '@/types'
 
 export async function listCalibrations(cameraId: string): Promise<CalibrationList> {
   try {
-    const response = await apiClient.get<CalibrationList>(`/cameras/${cameraId}/calibrations`)
+    const response = await apiClient.get<CalibrationList>(cameraPath(cameraId, '/calibrations'))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -12,7 +13,7 @@ export async function listCalibrations(cameraId: string): Promise<CalibrationLis
 
 export async function getActiveCalibration(cameraId: string): Promise<Calibration> {
   try {
-    const response = await apiClient.get<Calibration>(`/cameras/${cameraId}/calibrations/active`)
+    const response = await apiClient.get<Calibration>(cameraPath(cameraId, '/calibrations/active'))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -21,7 +22,7 @@ export async function getActiveCalibration(cameraId: string): Promise<Calibratio
 
 export async function getCalibration(cameraId: string, calibrationId: string): Promise<Calibration> {
   try {
-    const response = await apiClient.get<Calibration>(`/cameras/${cameraId}/calibrations/${calibrationId}`)
+    const response = await apiClient.get<Calibration>(cameraPath(cameraId, `/calibrations/${calibrationId}`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -47,7 +48,7 @@ export async function createCalibration(cameraId: string, payload: CreateCalibra
     if (payload.notes) formData.append('notes', payload.notes)
     payload.files.forEach((f) => formData.append('files', f))
 
-    const response = await apiClient.post<Calibration>(`/cameras/${cameraId}/calibrations`, formData)
+    const response = await apiClient.post<Calibration>(cameraPath(cameraId, '/calibrations'), formData)
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -56,17 +57,19 @@ export async function createCalibration(cameraId: string, payload: CreateCalibra
 
 export async function activateCalibration(cameraId: string, calibrationId: string): Promise<Calibration> {
   try {
-    const response = await apiClient.post<Calibration>(`/cameras/${cameraId}/calibrations/${calibrationId}/activate`)
+    const response = await apiClient.post<Calibration>(cameraPath(cameraId, `/calibrations/${calibrationId}/activate`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
   }
 }
 
-export async function getUndistortPreview(cameraId: string, calibrationId: string): Promise<string> {
+export async function getUndistortPreview(cameraId: string, calibrationId: string): Promise<Blob> {
+  const context = getConnectionContext()
   try {
-    const response = await apiClient.get<{ preview_url: string }>(`/cameras/${cameraId}/calibrations/${calibrationId}/undistort-preview`)
-    return artifactUrl(response.data.preview_url)
+    const response = await apiClient.get<{ preview_url: string }>(cameraPath(cameraId, `/calibrations/${calibrationId}/undistort-preview`))
+    assertCurrentConnection(context)
+    return requireImageBlob(await fetchArtifactBlob(response.data.preview_url, context))
   } catch (error) {
     throw normalizeApiError(error)
   }
@@ -74,7 +77,7 @@ export async function getUndistortPreview(cameraId: string, calibrationId: strin
 
 export async function deleteCalibration(cameraId: string, calibrationId: string): Promise<void> {
   try {
-    await apiClient.delete(`/cameras/${cameraId}/calibrations/${calibrationId}`)
+    await apiClient.delete(cameraPath(cameraId, `/calibrations/${calibrationId}`))
   } catch (error) {
     throw normalizeApiError(error)
   }

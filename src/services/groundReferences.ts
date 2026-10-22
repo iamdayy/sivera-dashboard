@@ -1,9 +1,9 @@
-import { apiClient, normalizeApiError, artifactUrl } from './api'
+import { apiClient, cameraPath, normalizeApiError } from './api'
 import type { GroundReference, GroundReferenceList } from '@/types'
 
 export async function listGroundReferences(cameraId: string): Promise<GroundReferenceList> {
   try {
-    const response = await apiClient.get<GroundReferenceList>(`/cameras/${cameraId}/ground-references`)
+    const response = await apiClient.get<GroundReferenceList>(cameraPath(cameraId, '/ground-references'))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -12,7 +12,7 @@ export async function listGroundReferences(cameraId: string): Promise<GroundRefe
 
 export async function getActiveGroundReference(cameraId: string): Promise<GroundReference> {
   try {
-    const response = await apiClient.get<GroundReference>(`/cameras/${cameraId}/ground-references/active`)
+    const response = await apiClient.get<GroundReference>(cameraPath(cameraId, '/ground-references/active'))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -21,7 +21,7 @@ export async function getActiveGroundReference(cameraId: string): Promise<Ground
 
 export async function getGroundReference(cameraId: string, groundRefId: string): Promise<GroundReference> {
   try {
-    const response = await apiClient.get<GroundReference>(`/cameras/${cameraId}/ground-references/${groundRefId}`)
+    const response = await apiClient.get<GroundReference>(cameraPath(cameraId, `/ground-references/${groundRefId}`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -43,7 +43,7 @@ export async function createGroundReference(cameraId: string, payload: CreateGro
     formData.append('world_units', payload.world_units)
     if (payload.description) formData.append('description', payload.description)
 
-    const response = await apiClient.post<GroundReference>(`/cameras/${cameraId}/ground-references`, formData)
+    const response = await apiClient.post<GroundReference>(cameraPath(cameraId, '/ground-references'), formData)
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -52,7 +52,7 @@ export async function createGroundReference(cameraId: string, payload: CreateGro
 
 export async function activateGroundReference(cameraId: string, groundRefId: string): Promise<GroundReference> {
   try {
-    const response = await apiClient.post<GroundReference>(`/cameras/${cameraId}/ground-references/${groundRefId}/activate`)
+    const response = await apiClient.post<GroundReference>(cameraPath(cameraId, `/ground-references/${groundRefId}/activate`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -78,7 +78,7 @@ export interface GroundModel {
 
 export async function getActiveGroundModel(cameraId: string): Promise<GroundModel> {
   try {
-    const response = await apiClient.get<GroundModel>(`/cameras/${cameraId}/ground-models/active`)
+    const response = await apiClient.get<GroundModel>(cameraPath(cameraId, '/ground-models/active'))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -87,7 +87,7 @@ export async function getActiveGroundModel(cameraId: string): Promise<GroundMode
 
 export async function getGroundModel(cameraId: string, groundModelId: string): Promise<GroundModel> {
   try {
-    const response = await apiClient.get<GroundModel>(`/cameras/${cameraId}/ground-models/${groundModelId}`)
+    const response = await apiClient.get<GroundModel>(cameraPath(cameraId, `/ground-models/${groundModelId}`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -100,8 +100,9 @@ export async function getGroundModelByRef(cameraId: string, groundRefId: string)
     const active = await getActiveGroundModel(cameraId)
     if (active.ground_ref_id === groundRefId) return active
     return null
-  } catch {
-    return null
+  } catch (error) {
+    if (normalizeApiError(error).status === 404) return null
+    throw error
   }
 }
 
@@ -118,13 +119,8 @@ export async function getBEVPreview(cameraId: string, groundModelId: string, tes
     if (testImagePath) params.append('test_image_path', testImagePath)
     if (maskPath) params.append('mask_path', maskPath)
 
-    const response = await apiClient.get<BEVPreview>(`/cameras/${cameraId}/ground-models/${groundModelId}/bev-preview?${params}`)
-    return {
-      bev_image_url: artifactUrl(response.data.bev_image_url),
-      bev_mask_url: artifactUrl(response.data.bev_mask_url),
-      bev_overlay_url: artifactUrl(response.data.bev_overlay_url),
-      bev_info: response.data.bev_info,
-    }
+    const response = await apiClient.get<BEVPreview>(cameraPath(cameraId, `/ground-models/${groundModelId}/bev-preview?${params}`))
+    return response.data
   } catch (error) {
     throw normalizeApiError(error)
   }

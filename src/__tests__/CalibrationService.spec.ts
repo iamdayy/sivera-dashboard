@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiClient } from '@/services/api'
+import { Blob as NodeBlob } from 'node:buffer'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiClient, setConnection } from '@/services/api'
 import { activateCalibration, createCalibration, deleteCalibration, getUndistortPreview, listCalibrations } from '@/services/calibrations'
 import { calibrationPayload, createCalibrationForm } from '@/lib/calibration-form'
 import { calibration, camera } from '../../e2e/fixtures/api'
 
-afterEach(() => vi.restoreAllMocks())
+beforeEach(() => {
+  vi.stubGlobal('Blob', NodeBlob)
+  setConnection('http://sivera-ui.test', 'ui-fixture-not-a-credential')
+})
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('calibration service requests', () => {
   it('posts exact multipart fields, repeated files, Alpha zero and no manual boundary', async () => {
@@ -14,7 +19,7 @@ describe('calibration service requests', () => {
     expect(post).toHaveBeenCalledTimes(1)
     const call = post.mock.calls[0]!
     expect(call).toHaveLength(2)
-    expect(call[0]).toBe(`/cameras/${camera.id}/calibrations`)
+    expect(call[0]).toBe(`/api/v1/cameras/${camera.id}/calibrations`)
     const form = call[1] as FormData
     expect(form).toBeInstanceOf(FormData)
     expect(Array.from(form.keys())).toEqual(['chessboard_cols', 'chessboard_rows', 'square_m', 'alpha', ...files.map(() => 'files')])
@@ -36,15 +41,29 @@ describe('calibration service requests', () => {
     await expect(listCalibrations(camera.id)).resolves.toEqual({ items: [calibration], total: 1 })
     await activateCalibration(camera.id, calibration.id)
     await deleteCalibration(camera.id, calibration.id)
-    expect(get).toHaveBeenCalledWith(`/cameras/${camera.id}/calibrations`)
-    expect(post).toHaveBeenCalledWith(`/cameras/${camera.id}/calibrations/${calibration.id}/activate`)
-    expect(remove).toHaveBeenCalledWith(`/cameras/${camera.id}/calibrations/${calibration.id}`)
+    expect(get).toHaveBeenCalledWith(`/api/v1/cameras/${camera.id}/calibrations`)
+    expect(post).toHaveBeenCalledWith(`/api/v1/cameras/${camera.id}/calibrations/${calibration.id}/activate`)
+    expect(remove).toHaveBeenCalledWith(`/api/v1/cameras/${camera.id}/calibrations/${calibration.id}`)
   })
 
-  it('uses only the returned preview URL through the existing resolver', async () => {
+  it('fetches only the returned trusted preview URL with authentication', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { preview_url: '/files/returned.png' } })
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response('image', { headers: { 'Content-Type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetch)
+    const blob = await getUndistortPreview(camera.id, calibration.id)
+    expect(blob.type).toBe('image/png')
+    expect(fetch).toHaveBeenCalledWith('http://sivera-ui.test/files/returned.png', expect.objectContaining({ headers: { 'X-API-Key': 'ui-fixture-not-a-credential' }, redirect: 'error', credentials: 'omit' }))
+    expect(get).toHaveBeenCalledWith(`/api/v1/cameras/${camera.id}/calibrations/${calibration.id}/undistort-preview`)
+  })
+
+  it('rejects external previews before sending a key and rejects non-image responses', async () => {
     const get = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { preview_url: 'https://artifacts.example.test/returned.png' } })
-    await expect(getUndistortPreview(camera.id, calibration.id)).resolves.toBe('https://artifacts.example.test/returned.png')
-    expect(get).toHaveBeenCalledWith(`/cameras/${camera.id}/calibrations/${calibration.id}/undistort-preview`)
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response('{}', { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(getUndistortPreview(camera.id, calibration.id)).rejects.toMatchObject({ status: null })
+    expect(fetch).not.toHaveBeenCalled()
+    get.mockResolvedValue({ data: { preview_url: '/files/returned.png' } })
+    await expect(getUndistortPreview(camera.id, calibration.id)).rejects.toMatchObject({ message: 'Berkas preview bukan gambar yang didukung.' })
   })
 
   it('normalizes backend failures for inline feedback', async () => {

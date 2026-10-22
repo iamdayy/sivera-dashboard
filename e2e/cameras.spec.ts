@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import type { Camera, CameraDetail, CameraList, CreateCameraPayload } from '../src/types'
+import type { Camera, CameraDetail, CameraList, CreateCameraPayload, UpdateCameraPayload } from '../src/types'
 import { apiOrigin, camera, installApiFixture } from './fixtures/api'
 
 async function setupCameras(page: Page, initial: Camera[] = [camera]) {
@@ -10,13 +10,13 @@ async function setupCameras(page: Page, initial: Camera[] = [camera]) {
     calls: [] as { method: string; path: string; body: unknown; key: string | undefined }[],
     hold: undefined as Promise<void> | undefined,
   }
-  await page.route(new RegExp(`^${apiOrigin}/cameras(?:[/?]|$)`), async (route) => {
+  await page.route(new RegExp(`^${apiOrigin}/api/v1/cameras(?:[/?]|$)`), async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const method = request.method()
     if (method === 'OPTIONS') return route.fulfill({ status: 204 })
     if (method === 'GET') {
-      if (path === '/cameras') {
+      if (path === '/api/v1/cameras') {
         if (state.hold) await state.hold
         if (state.fail.GET) return route.fulfill({ status: 503, json: { detail: 'Fixture error' } })
         const response: CameraList = {
@@ -28,7 +28,7 @@ async function setupCameras(page: Page, initial: Camera[] = [camera]) {
         }
         return route.fulfill({ json: response })
       }
-      const item = state.items.find((item) => path === `/cameras/${item.id}`)
+      const item = state.items.find((item) => path === `/api/v1/cameras/${item.id}`)
       if (item) {
         if (state.fail.detail)
           return route.fulfill({ status: 503, json: { detail: 'Fixture error' } })
@@ -53,7 +53,8 @@ async function setupCameras(page: Page, initial: Camera[] = [camera]) {
         ...camera,
         ...payload,
         id: '33333333-3333-4333-8333-333333333333',
-        rtsp_url: payload.rtsp_url ?? null,
+        rtsp_url: null,
+        rtsp_configured: Boolean(payload.rtsp_url),
         latitude: payload.latitude ?? null,
         longitude: payload.longitude ?? null,
       }
@@ -61,13 +62,18 @@ async function setupCameras(page: Page, initial: Camera[] = [camera]) {
       return route.fulfill({ status: 201, json: created })
     }
     if (method === 'PATCH') {
+      const payload = body as UpdateCameraPayload
       state.items = state.items.map((item) =>
-        path === `/cameras/${item.id}` ? { ...item, ...(body as Partial<Camera>) } : item,
+        path === `/api/v1/cameras/${item.id}` ? {
+          ...item, ...payload, rtsp_url: null,
+          rtsp_configured: payload.rtsp_url === undefined ? item.rtsp_configured : Boolean(payload.rtsp_url),
+          stream_enabled: payload.rtsp_url === null ? false : item.stream_enabled,
+        } : item,
       )
-      return route.fulfill({ json: state.items.find((item) => path === `/cameras/${item.id}`) })
+      return route.fulfill({ json: state.items.find((item) => path === `/api/v1/cameras/${item.id}`) })
     }
     if (method === 'DELETE') {
-      state.items = state.items.filter((item) => path !== `/cameras/${item.id}`)
+      state.items = state.items.filter((item) => path !== `/api/v1/cameras/${item.id}`)
       return route.fulfill({ status: 204 })
     }
     return route.fallback()
@@ -100,11 +106,10 @@ test('create submits numeric JSON once and refreshes the table', async ({ page }
   expect(state.calls).toHaveLength(1)
   expect(state.calls[0]).toEqual({
     method: 'POST',
-    path: '/cameras',
+    path: '/api/v1/cameras',
     key: 'ui-fixture-not-a-credential',
     body: {
       name: 'Kamera baru fixture UI',
-      rtsp_url: '',
       resolution_w: 1280,
       resolution_h: 1080,
       fps: 30,
@@ -136,7 +141,6 @@ test('create failure preserves fields; retry omits empty coordinates', async ({ 
   expect(state.calls).toHaveLength(2)
   expect(state.calls[1]?.body).toEqual({
     name: 'Kamera gagal fixture UI',
-    rtsp_url: '',
     resolution_w: 1920,
     resolution_h: 1080,
     fps: 15,
@@ -163,7 +167,7 @@ test('edit failure retains input and PATCH uses the selected UUID', async ({ pag
   expect(state.calls).toHaveLength(2)
   expect(state.calls[1]).toMatchObject({
     method: 'PATCH',
-    path: `/cameras/${camera.id}`,
+    path: `/api/v1/cameras/${camera.id}`,
     body: {
       name: 'Kamera edit fixture UI',
       resolution_w: 1920,
@@ -177,6 +181,68 @@ test('edit failure retains input and PATCH uses the selected UUID', async ({ pag
   await expect(
     page.getByRole('button', { name: 'Edit Kamera edit fixture UI', exact: true }),
   ).toBeFocused()
+})
+
+test('RTSP edit is masked and replacement-only; an empty draft preserves the source', async ({ page }) => {
+  const state = await setupCameras(page, [{ ...camera, rtsp_configured: true, stream_enabled: true }])
+  await page.goto('/dashboard/cameras')
+  await page.getByRole('button', { name: `Edit ${camera.name}`, exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  const source = dialog.getByLabel('RTSP URL')
+  await expect(source).toHaveValue('')
+  await expect(source).toHaveAttribute('type', 'password')
+  await expect(dialog).toContainText('Kosong berarti tidak diubah')
+  await dialog.getByRole('button', { name: 'Simpan Perubahan' }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(state.calls[0]!.body).not.toHaveProperty('rtsp_url')
+  expect(state.items[0]!.rtsp_configured).toBe(true)
+  await page.getByRole('button', { name: `Edit ${camera.name}`, exact: true }).click()
+  await source.fill('rtsp://fixture-user:fixture-password@camera.test/live')
+  await dialog.getByRole('button', { name: 'Simpan Perubahan' }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(state.calls[1]!.body).toHaveProperty('rtsp_url', 'rtsp://fixture-user:fixture-password@camera.test/live')
+  expect(state.items[0]!.rtsp_url).toBeNull()
+  await page.getByRole('button', { name: `Edit ${camera.name}`, exact: true }).click()
+  await expect(source).toHaveValue('')
+  await expect(page.locator('body')).not.toContainText('fixture-password')
+})
+
+test('RTSP removal is confirmed, cancel-safe, retryable, and sends only an explicit null', async ({ page }) => {
+  const state = await setupCameras(page, [{ ...camera, rtsp_configured: true, stream_enabled: true }])
+  await page.goto('/dashboard/cameras')
+  await page.getByRole('button', { name: `Edit ${camera.name}`, exact: true }).click()
+  const edit = page.getByRole('dialog')
+  const trigger = edit.getByRole('button', { name: 'Hapus Sumber RTSP' })
+  await edit.getByLabel('Nama Kamera').fill('Draf metadata fixture')
+  await trigger.click()
+  const confirmation = page.getByRole('alertdialog')
+  await expect(confirmation.getByRole('button', { name: 'Batal' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(confirmation).not.toBeVisible()
+  await expect(trigger).toBeFocused()
+  expect(state.calls).toHaveLength(0)
+  await trigger.click()
+  state.fail.PATCH = true
+  await confirmation.getByRole('button', { name: 'Hapus Sumber', exact: true }).click()
+  await expect(confirmation.getByRole('alert')).toContainText('tidak memiliki izin')
+  state.fail.PATCH = false
+  let finish!: () => void
+  state.hold = new Promise(resolve => { finish = resolve })
+  await confirmation.getByRole('button', { name: 'Hapus Sumber', exact: true }).click()
+  await expect(confirmation.getByRole('button', { name: 'Menghapus sumber...' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toBeVisible()
+  expect(state.calls).toHaveLength(2)
+  expect(state.calls[1]).toMatchObject({ method: 'PATCH', path: `/api/v1/cameras/${camera.id}`, body: { rtsp_url: null } })
+  expect(state.calls[1]!.body).toEqual({ rtsp_url: null })
+  finish()
+  await expect(confirmation).not.toBeVisible()
+  await expect(edit).toBeVisible()
+  await expect(edit.getByLabel('Nama Kamera')).toHaveValue('Draf metadata fixture')
+  await expect(edit.getByLabel('RTSP URL')).toBeFocused()
+  expect(state.items[0]!.rtsp_configured).toBe(false)
+  expect(state.items[0]!.stream_enabled).toBe(false)
+  expect(state.items[0]!.name).toBe(camera.name)
 })
 
 test('cancel, Escape, outside click and close button reset without requests and restore focus', async ({
@@ -262,7 +328,7 @@ test('delete failure stays open; pending retry sends exactly one DELETE', async 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
   expect(state.calls).toHaveLength(2)
-  expect(state.calls[1]).toMatchObject({ method: 'DELETE', path: `/cameras/${camera.id}` })
+  expect(state.calls[1]).toMatchObject({ method: 'DELETE', path: `/api/v1/cameras/${camera.id}` })
   finish()
   await expect(dialog).not.toBeVisible()
   await expect(page.getByText('Belum ada kamera terdaftar.', { exact: false })).toBeVisible()

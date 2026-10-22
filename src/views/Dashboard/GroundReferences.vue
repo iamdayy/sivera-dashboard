@@ -237,6 +237,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/composables/useToast'
+import { useObjectUrl } from '@/composables/useObjectUrl'
+import { useConnectionScope } from '@/composables/useConnectionScope'
+import { fetchArtifactBlob, requireImageBlob } from '@/services/artifacts'
 import { useApiStore } from '@/stores/api'
 import { listCameras } from '@/services/cameras'
 import { listGroundReferences, createGroundReference as apiCreateGroundReference, activateGroundReference as apiActivateGroundReference, getActiveGroundModel as apiGetActiveGroundModel, getGroundModelByRef as apiGetGroundModelByRef, getBEVPreview as apiGetBEVPreview } from '@/services/groundReferences'
@@ -246,6 +249,7 @@ import type { GroundModel } from '@/services/groundReferences'
 
 const apiStore = useApiStore()
 const toast = useToast()
+const isActive = useConnectionScope()
 const view = ref<HTMLElement | null>(null)
 const calibImageRef = ref<HTMLImageElement | null>(null)
 let dialogTrigger: HTMLElement | null = null
@@ -265,7 +269,9 @@ const refForm = ref({
   world_units: 'meter' as 'meter' | 'metre',
   description: '',
 })
-const calibImageUrl = ref<string | null>(null)
+const { url: calibImageUrl, replace: replaceCalibPreview, clear: clearCalibPreview } = useObjectUrl()
+const { replace: replaceBevPreview, clear: clearBevPreview } = useObjectUrl()
+let previewVersion = 0
 const imagePoints = ref<Array<{ u: number; v: number }>>([])
 const worldPoints = ref<Array<{ x: number; y: number }>>([])
 const saveError = ref('')
@@ -299,9 +305,11 @@ async function fetchCameras() {
   cameraError.value = ''
   try {
     const response = await listCameras()
+    if (!isActive()) return
     cameras.value = response.items
     if (!selectedCameraId.value) selectedCameraId.value = response.items[0]?.id ?? ''
   } catch (error: unknown) {
+    if (!isActive()) return
     cameraError.value = errorMessage(error)
   } finally {
     cameraLoading.value = false
@@ -317,15 +325,18 @@ async function fetchGroundReferences() {
   if (!loading.value) return
   try {
     const response = await listGroundReferences(cameraId)
-    if (version === loadVersion) groundReferences.value = response.items
+    if (isActive() && version === loadVersion) groundReferences.value = response.items
   } catch (error: unknown) {
-    if (version === loadVersion) loadError.value = errorMessage(error)
+    if (isActive() && version === loadVersion) loadError.value = errorMessage(error)
   } finally {
     if (version === loadVersion) loading.value = false
   }
 }
 
 watch(selectedCameraId, () => {
+  clearCalibPreview()
+  clearBevPreview()
+  previewVersion++
   actionError.value = null
   void fetchGroundReferences()
 })
@@ -342,18 +353,22 @@ function openCreateDialog(event: MouseEvent) {
   refForm.value = { world_units: 'meter', description: '' }
   imagePoints.value = []
   worldPoints.value = []
-  calibImageUrl.value = null
+  clearCalibPreview()
   saveError.value = ''
   isCreateDialogOpen.value = true
-  // Fetch active calibration for image preview after dialog opens
+  const cameraId = selectedCameraId.value
+  const version = ++previewVersion
   nextTick().then(async () => {
-    if (selectedCameraId.value) {
+    if (cameraId && isActive() && version === previewVersion) {
       try {
-        const activeCalib = await apiGetActiveCalibration(selectedCameraId.value)
+        const activeCalib = await apiGetActiveCalibration(cameraId)
+        if (!isActive() || version !== previewVersion) return
         if (activeCalib) {
-          calibImageUrl.value = await apiGetUndistortPreview(selectedCameraId.value, activeCalib.id)
+          const blob = await apiGetUndistortPreview(cameraId, activeCalib.id)
+          if (isActive() && version === previewVersion) replaceCalibPreview(blob)
         }
       } catch {
+        if (!isActive() || version !== previewVersion) return
         toast.warning('Tidak dapat memuat preview kalibrasi; koordinat image bisa diketik manual')
       }
     }
@@ -367,7 +382,8 @@ function setCreateDialogOpen(open: boolean) {
     refForm.value = { world_units: 'meter', description: '' }
     imagePoints.value = []
     worldPoints.value = []
-    calibImageUrl.value = null
+    previewVersion++
+    clearCalibPreview()
     saveError.value = ''
   }
 }
@@ -400,8 +416,10 @@ async function saveGroundReference() {
       world_units: refForm.value.world_units,
       description: refForm.value.description || undefined,
     })
+    if (!isActive()) return
     toast.success('Referensi tanah berhasil dibuat')
   } catch (error: unknown) {
+    if (!isActive()) return
     saveError.value = errorMessage(error)
     const err = error as { response?: { data?: { detail?: string } }; message?: string }
     toast.error('Gagal membuat referensi tanah', { description: err.response?.data?.detail || err.message })
@@ -420,9 +438,11 @@ async function activateReference(ref: GroundReference) {
   actionError.value = null
   try {
     await apiActivateGroundReference(cameraId, ref.id)
+    if (!isActive()) return
     toast.success('Referensi tanah berhasil diaktifkan')
     if (cameraId === selectedCameraId.value) await fetchGroundReferences()
   } catch (error: unknown) {
+    if (!isActive()) return
     actionError.value = { title: `Gagal mengaktifkan referensi tanah v${ref.version}`, message: errorMessage(error) }
     toast.error(actionError.value.title, { description: actionError.value.message })
   } finally {
@@ -437,6 +457,7 @@ async function viewGroundModel(ref: GroundReference) {
   actionError.value = null
   try {
     const model = await apiGetGroundModelByRef(cameraId, ref.id)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     if (!model) {
       toast.warning('Model ground untuk referensi ini belum dibuat', { description: 'Aktifkan referensi ini terlebih dahulu untuk membuat model ground.' })
       return
@@ -445,6 +466,7 @@ async function viewGroundModel(ref: GroundReference) {
       description: `ID: ${model.id}, Reproj: ${model.reproj_err_px?.toFixed(2) ?? '-'} px, Tinggi: ${model.cam_height?.toFixed(2) ?? '-'} m`,
     })
   } catch (error: unknown) {
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     actionError.value = { title: `Gagal memuat model ground v${ref.version}`, message: errorMessage(error) }
     toast.error(actionError.value.title, { description: actionError.value.message })
   } finally {
@@ -459,16 +481,21 @@ async function viewBevPreview(ref: GroundReference) {
   actionError.value = null
   try {
     const model = await apiGetGroundModelByRef(cameraId, ref.id)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     if (!model) {
       toast.error('BEV preview tidak tersedia', { description: 'Model ground untuk referensi ini belum dibuat. Aktifkan referensi terlebih dahulu.' })
       return
     }
     const preview = await apiGetBEVPreview(cameraId, model.id)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
+    const blob = requireImageBlob(await fetchArtifactBlob(preview.bev_image_url))
+    if (!isActive() || cameraId !== selectedCameraId.value) return
+    const url = replaceBevPreview(blob)
     toast.success('BEV Preview siap', {
-      description: `Gambar: ${preview.bev_image_url}`,
-      action: { label: 'Buka', onClick: () => window.open(preview.bev_image_url, '_blank', 'noopener,noreferrer') },
+      action: { label: 'Buka', onClick: () => { if (isActive()) window.open(url, '_blank', 'noopener,noreferrer') } },
     })
   } catch (error: unknown) {
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     const msg = errorMessage(error)
     actionError.value = { title: `Gagal memuat BEV preview v${ref.version}`, message: msg }
     toast.error(actionError.value.title, { description: actionError.value.message })

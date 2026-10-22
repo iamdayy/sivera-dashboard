@@ -3,7 +3,7 @@
     <Header />
     <main class="flex-1 p-4">
       <router-view v-slot="{ Component }">
-        <component :is="Component" />
+        <component :is="Component" :key="route.path === '/dashboard/settings' ? 'settings' : apiStore.generation" />
       </router-view>
     </main>
 
@@ -21,4 +21,9 @@
 
 <script setup lang="ts">
 import Header from '@/components/layout/Header.vue'
+import { useApiStore } from '@/stores/api'
+import { useRoute } from 'vue-router'
+
+const apiStore = useApiStore()
+const route = useRoute()
 </script>

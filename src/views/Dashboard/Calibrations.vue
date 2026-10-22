@@ -209,6 +209,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/composables/useToast'
+import { useObjectUrl } from '@/composables/useObjectUrl'
+import { useConnectionScope } from '@/composables/useConnectionScope'
 import { useApiStore } from '@/stores/api'
 import { createCalibration as apiCreateCalibration, listCalibrations as apiListCalibrations, activateCalibration as apiActivateCalibration, getUndistortPreview as apiGetUndistortPreview, deleteCalibration as apiDeleteCalibration } from '@/services/calibrations'
 import { listCameras } from '@/services/cameras'
@@ -218,6 +220,7 @@ import type { Calibration, Camera } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
+const isActive = useConnectionScope()
 const view = ref<HTMLElement | null>(null)
 let dialogTrigger: HTMLElement | null = null
 const cameras = ref<Camera[]>([])
@@ -241,7 +244,7 @@ const deleteError = ref('')
 const activatingId = ref('')
 const previewingId = ref('')
 const actionError = ref<{ title: string; message: string } | null>(null)
-const previewUrl = ref('')
+const { url: previewUrl, replace: replacePreview, clear: clearPreview } = useObjectUrl()
 const previewVersion = ref<number | null>(null)
 const busy = computed(() => saving.value || deleting.value || !!activatingId.value || !!previewingId.value)
 
@@ -256,9 +259,11 @@ async function fetchCameras() {
   cameraError.value = ''
   try {
     const response = await listCameras()
+    if (!isActive()) return
     cameras.value = response.items
     if (!selectedCameraId.value) selectedCameraId.value = response.items[0]?.id ?? ''
   } catch (error: unknown) {
+    if (!isActive()) return
     cameraError.value = errorMessage(error)
   } finally {
     cameraLoading.value = false
@@ -274,9 +279,9 @@ async function fetchCalibrations() {
   if (!loading.value) return
   try {
     const response = await apiListCalibrations(cameraId)
-    if (version === loadVersion) calibrations.value = response.items
+    if (isActive() && version === loadVersion) calibrations.value = response.items
   } catch (error: unknown) {
-    if (version === loadVersion) loadError.value = errorMessage(error)
+    if (isActive() && version === loadVersion) loadError.value = errorMessage(error)
   } finally {
     if (version === loadVersion) loading.value = false
   }
@@ -284,7 +289,7 @@ async function fetchCalibrations() {
 
 watch(selectedCameraId, () => {
   actionError.value = null
-  previewUrl.value = ''
+  clearPreview()
   previewVersion.value = null
   void fetchCalibrations()
 })
@@ -337,8 +342,10 @@ async function saveCalibration() {
   saving.value = true
   try {
     await apiCreateCalibration(cameraId, payload)
+    if (!isActive()) return
     toast.success('Kalibrasi berhasil dibuat')
   } catch (error: unknown) {
+    if (!isActive()) return
     saveError.value = errorMessage(error)
     toast.error('Gagal membuat kalibrasi', { description: saveError.value })
     return
@@ -356,9 +363,11 @@ async function activateCalibration(calib: Calibration) {
   actionError.value = null
   try {
     await apiActivateCalibration(cameraId, calib.id)
+    if (!isActive()) return
     toast.success('Kalibrasi berhasil diaktifkan')
     if (cameraId === selectedCameraId.value) await fetchCalibrations()
   } catch (error: unknown) {
+    if (!isActive()) return
     actionError.value = { title: `Gagal mengaktifkan kalibrasi v${calib.version}`, message: errorMessage(error) }
     toast.error(actionError.value.title, { description: actionError.value.message })
   } finally {
@@ -370,12 +379,16 @@ async function viewPreview(calib: Calibration) {
   if (busy.value) return
   previewingId.value = calib.id
   actionError.value = null
-  previewUrl.value = ''
+  clearPreview()
+  const cameraId = selectedCameraId.value
   try {
-    previewUrl.value = await apiGetUndistortPreview(selectedCameraId.value, calib.id)
+    const blob = await apiGetUndistortPreview(cameraId, calib.id)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
+    replacePreview(blob)
     previewVersion.value = calib.version
     window.open(previewUrl.value, '_blank', 'noopener,noreferrer')
   } catch (error: unknown) {
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     actionError.value = { title: `Gagal memuat preview kalibrasi v${calib.version}`, message: errorMessage(error) }
     toast.error(actionError.value.title, { description: actionError.value.message })
   } finally {
@@ -411,8 +424,10 @@ async function deleteCalibration() {
   deleteError.value = ''
   try {
     await apiDeleteCalibration(cameraId, deletingCalibration.value.id)
+    if (!isActive()) return
     toast.success('Kalibrasi berhasil dihapus')
   } catch (error: unknown) {
+    if (!isActive()) return
     deleteError.value = errorMessage(error)
     toast.error('Gagal menghapus kalibrasi', { description: deleteError.value })
     return

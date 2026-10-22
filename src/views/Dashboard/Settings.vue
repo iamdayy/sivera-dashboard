@@ -17,12 +17,17 @@
               type="url"
               required
               aria-describedby="api-base-help"
-              placeholder="http://localhost:8000/api/v1"
+              placeholder="http://localhost:8000"
             />
             <p id="api-base-help" class="text-sm text-muted-foreground">
-              Gunakan URL dasar sesuai konfigurasi backend, termasuk prefix jika ada.
+              Gunakan origin tanpa prefix. Request kamera memakai /api/v1/cameras; /health dan /docs di luar prefix.
             </p>
           </div>
+
+          <Alert v-if="apiStore.configurationNotice || migrationMessage">
+            <AlertTitle>Konfigurasi alamat API</AlertTitle>
+            <AlertDescription>{{ migrationMessage || apiStore.configurationNotice }}</AlertDescription>
+          </Alert>
 
           <div class="space-y-2">
             <Label for="api-key">API Key</Label>
@@ -69,6 +74,14 @@
     </Card>
 
     <Card>
+      <CardHeader><CardTitle>Kesehatan Backend</CardTitle><CardDescription>Probe /health memeriksa API dan database, bukan worker, MediaMTX, atau izin key.</CardDescription></CardHeader>
+      <CardContent class="space-y-3">
+        <Button variant="outline" :disabled="apiStore.connectionStatus === 'checking' || savingConfig" @click="testHealth">{{ apiStore.connectionStatus === 'checking' ? 'Memeriksa backend...' : 'Periksa Backend' }}</Button>
+        <p v-if="healthMessage" role="status" class="text-sm">{{ healthMessage }}</p>
+      </CardContent>
+    </Card>
+
+    <Card>
       <CardHeader><CardTitle>Tentang</CardTitle></CardHeader>
       <CardContent>
         <dl class="space-y-3 text-sm">
@@ -84,12 +97,14 @@
             <dt class="text-muted-foreground">Dokumentasi API</dt>
             <dd class="sm:text-right">
               <a
+                v-if="apiDocsUrl"
                 :href="apiDocsUrl"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="inline-flex min-h-11 items-center text-primary underline underline-offset-4"
                 >/docs (Swagger UI)</a
               >
+              <span v-else>Atur origin API terlebih dahulu.</span>
             </dd>
           </div>
         </dl>
@@ -99,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -107,52 +122,76 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { setBaseUrl } from '@/services/api'
+import { getConnectionContext, isCurrentConnection } from '@/services/api'
 import { version } from '../../../package.json'
 
 const apiStore = useApiStore()
 const toast = useToast()
-const apiBaseUrl = ref(
-  localStorage.getItem('api_base_url') ||
-    import.meta.env.VITE_API_BASE_URL ||
-    'http://localhost:8000',
-)
-const apiKey = ref(localStorage.getItem('api_key') || '')
+const apiBaseUrl = ref(apiStore.origin)
+const apiKey = ref(apiStore.apiKey)
+const migrationMessage = ref('')
+const healthMessage = ref('')
 const showApiKey = ref(false)
 const savingConfig = ref(false)
 const connectionTested = ref(false)
 const connectionSuccess = ref(false)
 const connectionMessage = ref('')
+let active = true
+onScopeDispose(() => { active = false })
+watch(() => apiStore.generation, () => {
+  apiBaseUrl.value = apiStore.origin
+  apiKey.value = apiStore.apiKey
+  showApiKey.value = false
+  migrationMessage.value = ''
+  connectionTested.value = false
+  connectionMessage.value = ''
+  healthMessage.value = ''
+}, { flush: 'sync' })
 const about = [
   { label: 'Versi Aplikasi', value: version },
   { label: 'Build', value: import.meta.env.DEV ? 'Development' : 'Production' },
   { label: 'Framework', value: 'Vue 3 + Vite + Tailwind CSS' },
   { label: 'API Backend', value: 'FastAPI (Sivera API)' },
 ]
-const apiDocsUrl = computed(
-  () => `${apiBaseUrl.value.replace(/\/+$/, '').replace(/\/api\/v1$/, '')}/docs`,
-)
+const apiDocsUrl = computed(() => apiStore.origin ? `${apiStore.origin}/docs` : undefined)
 
 async function saveApiConfig() {
   if (savingConfig.value) return
   savingConfig.value = true
   connectionTested.value = false
+  let context = getConnectionContext()
   try {
-    setBaseUrl(apiBaseUrl.value)
-    if (apiKey.value) apiStore.setApiKey(apiKey.value)
-    else apiStore.clearApiKey()
+    const { migrated } = apiStore.configure(apiBaseUrl.value, apiKey.value)
+    migrationMessage.value = migrated ? 'Prefix /api/v1 telah dipisahkan; alamat tersimpan hanya origin.' : ''
+    apiBaseUrl.value = apiStore.origin
+    context = getConnectionContext()
     const keyTest = await apiStore.testApiKey()
+    if (!active || !isCurrentConnection(context)) return
     connectionSuccess.value = keyTest.valid
     connectionMessage.value = keyTest.message
     if (keyTest.valid) toast.success('Konfigurasi disimpan', { description: keyTest.message })
     else toast.error('Akses API belum terverifikasi', { description: keyTest.message })
-  } catch {
+  } catch (error) {
+    if (!active || !isCurrentConnection(context)) return
     connectionSuccess.value = false
-    connectionMessage.value = 'Gagal memvalidasi konfigurasi. Periksa URL API dan coba kembali.'
+    connectionMessage.value = error instanceof Error ? error.message : 'Gagal memvalidasi konfigurasi. Periksa URL API dan coba kembali.'
     toast.error(connectionMessage.value)
   } finally {
-    connectionTested.value = true
+    if (active && isCurrentConnection(context)) connectionTested.value = true
     savingConfig.value = false
+  }
+}
+
+async function testHealth() {
+  const context = getConnectionContext()
+  healthMessage.value = ''
+  try {
+    const health = await apiStore.testConnection()
+    if (!active || !isCurrentConnection(context)) return
+    healthMessage.value = apiStore.connectionStatus === 'ok' ? `API sehat, database terhubung. Versi ${health.version}.` : 'API merespons, tetapi kesehatan backend menurun atau database belum terhubung.'
+  } catch {
+    if (!active || !isCurrentConnection(context)) return
+    healthMessage.value = 'Backend belum dapat dihubungi. Periksa origin tersimpan dan koneksi jaringan.'
   }
 }
 </script>

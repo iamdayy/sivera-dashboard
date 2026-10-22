@@ -139,6 +139,7 @@
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import { useToast } from '@/composables/useToast'
+import { useConnectionScope } from '@/composables/useConnectionScope'
 import { useApiStore } from '@/stores/api'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -151,6 +152,7 @@ import type { Calibration, Camera, GroundReference, PredictionJob } from '@/type
 const apiStore = useApiStore()
 const router = useRouter()
 const toast = useToast()
+const isActive = useConnectionScope()
 
 const stats = ref({
   total_cameras: 0,
@@ -168,6 +170,7 @@ const fetchStats = async () => {
   try {
     // Fetch cameras
     const camerasRes = await listCameras()
+    if (!isActive()) return
     const cameras = camerasRes.items
     stats.value.total_cameras = cameras.length
 
@@ -178,16 +181,20 @@ const fetchStats = async () => {
       let totalJobs = 0
 
       for (const cam of cameras) {
+        if (!isActive()) return
         // Active calibrations
         const calibRes = await listCalibrations(cam.id)
+        if (!isActive()) return
         totalActiveCalib += calibRes.items.filter(c => c.is_active).length
 
         // Ground references
         const groundRes = await listGroundReferences(cam.id)
+        if (!isActive()) return
         totalGroundRefs += groundRes.items.length
 
         // Prediction jobs
         const predRes = await listPredictionJobs(cam.id, 1, 5)
+        if (!isActive()) return
         totalJobs += predRes.items.length
         // Collect recent jobs
         for (const job of predRes.items.slice(0, 3)) {
@@ -204,7 +211,7 @@ const fetchStats = async () => {
       recentJobs.value = recentJobs.value.slice(0, 5)
     }
   } catch (error) {
-    console.error('Failed to fetch stats:', error)
+    if (!isActive()) return
     toast.error('Gagal memuat statistik dashboard')
     stats.value = {
       total_cameras: 0,

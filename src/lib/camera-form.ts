@@ -15,7 +15,7 @@ export interface CameraForm {
 export function createCameraForm(camera?: Camera): CameraForm {
   return {
     name: camera?.name ?? '',
-    rtsp_url: camera?.rtsp_url ?? '',
+    rtsp_url: '',
     resolution_w: camera?.resolution_w ?? 1920,
     resolution_h: camera?.resolution_h ?? 1080,
     fps: camera?.fps ?? 15,
@@ -58,7 +58,7 @@ export function cameraPayload(form: CameraForm, editing = false): CreateCameraPa
   }
   return {
     name: form.name,
-    rtsp_url: editing ? form.rtsp_url || undefined : form.rtsp_url,
+    rtsp_url: form.rtsp_url.trim() || undefined,
     resolution_w,
     resolution_h,
     fps,

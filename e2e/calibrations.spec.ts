@@ -25,18 +25,18 @@ async function setupCalibrations(page: Page, items: Calibration[] = [calibration
     loads: [] as string[],
     calls: [] as { method: string; path: string; key: string | undefined; form?: FormData }[],
   }
-  await page.route(new RegExp(`^${apiOrigin}/cameras(?:\\?|$)`), async route => {
+  await page.route(new RegExp(`^${apiOrigin}/api/v1/cameras(?:\\?|$)`), async route => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204 })
     if (state.cameraHold) await state.cameraHold
     if (state.fail.camera) return route.fulfill({ status: 503, json: { detail: 'Camera fixture error' } })
     return route.fallback()
   })
-  await page.route(new RegExp(`^${apiOrigin}/cameras/[^/]+/calibrations(?:/|$)`), async route => {
+  await page.route(new RegExp(`^${apiOrigin}/api/v1/cameras/[^/]+/calibrations(?:/|$)`), async route => {
     const request = route.request()
     const method = request.method()
     if (method === 'OPTIONS') return route.fulfill({ status: 204 })
     const path = new URL(request.url()).pathname
-    const cameraId = path.split('/')[2]!
+    const cameraId = path.split('/')[4]!
     if (method === 'GET' && path.endsWith('/calibrations')) {
       state.loads.push(cameraId)
       const rows = state.items.filter(item => item.camera_id === cameraId).map(item => ({ ...item }))
@@ -52,23 +52,24 @@ async function setupCalibrations(page: Page, items: Calibration[] = [calibration
     if (state.hold) await state.hold
     if (method === 'POST' && path.endsWith('/calibrations')) {
       if (state.fail.create) return route.fulfill({ status: 400, json: { detail: 'Only 0 valid images; minimum 10 required' } })
-      const created = { ...calibration, camera_id: cameraId, id: '55555555-5555-4555-8555-555555555555', version: 3, is_active: false }
+      const created = { ...calibration, camera_id: cameraId, id: '55555555-5555-4555-8555-555555555555', version: 3, is_active: true }
+      state.items = state.items.map(item => item.camera_id === cameraId ? { ...item, is_active: false } : item)
       state.items.push(created)
       return route.fulfill({ status: 201, json: created })
     }
     if (method === 'POST' && path.endsWith('/activate')) {
       if (state.fail.activate) return route.fulfill({ status: 403, json: { detail: 'Activation fixture error' } })
-      const id = path.split('/')[4]
+      const id = path.split('/')[6]
       state.items = state.items.map(item => item.camera_id === cameraId ? { ...item, is_active: item.id === id } : item)
       return route.fulfill({ json: { calibration_id: id, is_active: true, message: 'Activated' } })
     }
     if (method === 'GET' && path.endsWith('/undistort-preview')) {
       if (state.fail.preview) return route.fulfill({ status: 404, json: { detail: 'No calibration images available for preview' } })
-      return route.fulfill({ json: { preview_url: `${apiOrigin}/returned-preview.png`, original_url: `${apiOrigin}/returned-original.png`, resolution: [1920, 1080] } })
+      return route.fulfill({ json: { preview_url: `${apiOrigin}/files/returned-preview.png`, original_size: [1920, 1080], undistorted_size: [1920, 1080], k_undist: calibration.k_matrix } })
     }
     if (method === 'DELETE') {
       if (state.fail.delete) return route.fulfill({ status: 403, json: { detail: 'Deletion fixture error' } })
-      state.items = state.items.filter(item => path !== `/cameras/${cameraId}/calibrations/${item.id}`)
+      state.items = state.items.filter(item => path !== `/api/v1/cameras/${cameraId}/calibrations/${item.id}`)
       return route.fulfill({ status: 204 })
     }
     return route.fallback()
@@ -114,7 +115,7 @@ test('camera changes clear old rows; stale responses cannot replace data or end 
   await page.keyboard.press('Enter')
   await expect(selector).toContainText(otherCamera.name)
   await expect.poll(() => state.loads.length).toBe(2)
-  const staleSuccess = page.waitForResponse(response => response.url().endsWith(`/cameras/${camera.id}/calibrations`))
+  const staleSuccess = page.waitForResponse(response => response.url().endsWith(`/api/v1/cameras/${camera.id}/calibrations`))
   first.finish()
   await (await staleSuccess).finished()
   await expect(page.getByText('Memuat kalibrasi...', { exact: true })).toBeVisible()
@@ -138,7 +139,7 @@ test('camera changes clear old rows; stale responses cannot replace data or end 
   await page.getByRole('option', { name: `${camera.name} (1920x1080)`, exact: true }).click()
   await expect(row(page, 1)).toBeVisible()
   state.fail.list = true
-  const staleFailure = page.waitForResponse(response => response.url().endsWith(`/cameras/${otherCamera.id}/calibrations`))
+  const staleFailure = page.waitForResponse(response => response.url().endsWith(`/api/v1/cameras/${otherCamera.id}/calibrations`))
   late.finish()
   await (await staleFailure).finished()
   await expect(row(page, 1)).toBeVisible()
@@ -191,7 +192,7 @@ test('create preserves native files, multipart fields and Alpha zero while guard
   await expect(dialog).toBeVisible()
   await expect.poll(() => state.calls.length).toBe(1)
   const call = state.calls[0]!
-  expect(call).toMatchObject({ method: 'POST', path: `/cameras/${camera.id}/calibrations`, key: 'ui-fixture-not-a-credential' })
+  expect(call).toMatchObject({ method: 'POST', path: `/api/v1/cameras/${camera.id}/calibrations`, key: 'ui-fixture-not-a-credential' })
   expect(['chessboard_cols', 'chessboard_rows', 'square_m', 'alpha', 'notes'].map(key => call.form!.get(key)))
     .toEqual(['8', '7', '0.03', '0', '<b>Catatan fixture UI</b>'])
   expect(call.form!.getAll('files').map(file => typeof file === 'string' ? file : file.name)).toEqual(images().map(file => file.name))
@@ -290,13 +291,13 @@ test('activation failure is visible; pending retry changes active version exactl
   await expect(page.getByRole('button', { name: 'Hapus kalibrasi v2', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Aktifkan kalibrasi v1', exact: true })).toBeEnabled()
   expect(state.calls).toHaveLength(2)
-  expect(state.calls[1]).toMatchObject({ method: 'POST', path: `/cameras/${camera.id}/calibrations/${inactive.id}/activate` })
+  expect(state.calls[1]).toMatchObject({ method: 'POST', path: `/api/v1/cameras/${camera.id}/calibrations/${inactive.id}/activate` })
 })
 
 test('preview failure recovers using only the returned URL and a working fallback link', async ({ page, context }) => {
   const state = await setupCalibrations(page)
   state.fail.preview = true
-  await context.route(`${apiOrigin}/returned-preview.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
+  await page.route(`${apiOrigin}/files/returned-preview.png`, route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64') }))
   await page.goto('/dashboard/calibrations')
   const preview = page.getByRole('button', { name: 'Preview kalibrasi v1', exact: true })
   await preview.click()
@@ -311,17 +312,17 @@ test('preview failure recovers using only the returned URL and a working fallbac
   await expect(preview).toContainText('Memuat preview...')
   hold.finish()
   const link = page.getByRole('link', { name: 'Buka Preview v1', exact: true })
-  await expect(link).toHaveAttribute('href', `${apiOrigin}/returned-preview.png`)
+  await expect(link).toHaveAttribute('href', /^blob:/)
   await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   const newPage = context.waitForEvent('page')
   await link.click()
   const artifact = await newPage
   await artifact.waitForLoadState()
-  expect(artifact.url()).toBe(`${apiOrigin}/returned-preview.png`)
+  expect(artifact.url()).toMatch(/^blob:/)
   await expect.poll(() => artifact.locator('img').evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
   await artifact.close()
   expect(state.calls).toHaveLength(2)
-  expect(state.calls[1]).toMatchObject({ method: 'GET', path: `/cameras/${camera.id}/calibrations/${calibration.id}/undistort-preview` })
+  expect(state.calls[1]).toMatchObject({ method: 'GET', path: `/api/v1/cameras/${camera.id}/calibrations/${calibration.id}/undistort-preview` })
 })
 
 test('delete names the selected version; cancel/Escape never delete; failure and pending are protected', async ({ page }) => {
@@ -358,7 +359,7 @@ test('delete names the selected version; cancel/Escape never delete; failure and
   await expect(row(page, 2)).not.toBeVisible()
   await expect(row(page, 1)).toBeVisible()
   await expect(createTrigger(page)).toBeFocused()
-  expect(state.calls[1]).toMatchObject({ method: 'DELETE', path: `/cameras/${camera.id}/calibrations/${inactive.id}` })
+  expect(state.calls[1]).toMatchObject({ method: 'DELETE', path: `/api/v1/cameras/${camera.id}/calibrations/${inactive.id}` })
 })
 
 test('camera and calibration load states recover without misreporting errors as empty', async ({ page }) => {

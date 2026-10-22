@@ -34,13 +34,15 @@ Check `package.json` if a command fails or scripts change. Do not add Vuetify or
 1. Inspect the running backend's `/openapi.json`, relevant route declarations, schemas, and tests before adding or changing requests.
 2. Configure the API origin with `VITE_API_BASE_URL`; commit only a safe `.env.example`, never real credentials.
 3. Current backend authentication uses `X-API-Key`; do not blindly copy an old `Authorization: Bearer` example.
-4. Current routes appear directly under paths such as `/cameras` and `/cameras/{camera_id}/...`; do not assume `/api/v1`.
+4. The MediaMTX contract verified on 22 October 2026 mounts camera routes at `/api/v1/cameras` and `/api/v1/cameras/{camera_id}/...`. Store only the backend origin; apply the prefix once with `cameraPath()`. `/health`, `/docs`, and `/files` are outside that prefix. Verify deployment paths rather than assuming them.
 5. Use exact multipart field names, response models, enum values, and status codes from the current contract.
 6. Treat IDs as UUID strings.
 7. Prediction requires active calibration, an active ground model/reference, and a depth scale. Show missing prerequisites clearly.
-8. RTSP prediction is not implemented in the current handler. Do not present it as functional until verified.
-9. Prediction currently runs synchronously despite returning HTTP 202. Do not assume background processing, polling, or persistent history unless verified.
+8. The current backend supports `upload`, `rtsp_frame`, and `latest_rtsp` through queued prediction jobs. Do not present browser playback or RTSP inference as verified without live evidence. RTSP sources must omit `file` and `timestamp`.
+9. HTTP 202 returns a persisted `job_id`; use the prediction GET endpoints for status and paginated history. Do not invent cancellation/deletion endpoints. Aborting an HTTP request does not cancel backend work.
 10. Render artifact URLs only when returned by the API.
+
+Historical note: before the MediaMTX backend update, this file documented unprefixed camera routes, unimplemented RTSP prediction, and synchronous upload prediction. Those statements describe the old contract, not the current one. Depth-scale readiness still has no public endpoint; do not infer readiness from calibration and ground-model GETs alone.
 
 ## Security
 

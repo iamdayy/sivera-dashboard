@@ -71,7 +71,7 @@
                 {{ camera.latitude?.toFixed(4) ?? '-' }}, {{ camera.longitude?.toFixed(4) ?? '-' }}
               </TableCell>
               <TableCell>
-                <Badge v-if="cameraStatuses[camera.id] === 'active'">Siap</Badge>
+                <Badge v-if="cameraStatuses[camera.id] === 'active'">Kalibrasi aktif</Badge>
                 <Badge v-else-if="cameraStatuses[camera.id] === 'loading'" variant="secondary"
                   >Memeriksa...</Badge
                 >
@@ -113,7 +113,7 @@
 
     <Dialog :open="isCameraDialogOpen" @update:open="setCameraDialogOpen">
       <DialogContent
-        :show-close-button="!saving"
+        :show-close-button="!saving && !removingSource"
         @close-auto-focus="restoreFocus"
         @escape-key-down="preventWhileSaving"
         @interact-outside="preventWhileSaving"
@@ -123,7 +123,7 @@
           <DialogDescription>Atur identitas, resolusi, dan lokasi kamera.</DialogDescription>
         </DialogHeader>
         <form class="space-y-4" @submit.prevent="saveCamera">
-          <fieldset :disabled="saving" class="min-w-0 space-y-4">
+          <fieldset :disabled="saving || removingSource" class="min-w-0 space-y-4">
             <div class="space-y-2">
               <Label for="camera-name">Nama Kamera</Label>
               <Input id="camera-name" v-model="form.name" required maxlength="100" />
@@ -133,12 +133,16 @@
               <Input
                 id="camera-rtsp"
                 v-model="form.rtsp_url"
+                type="password"
+                autocomplete="new-password"
+                spellcheck="false"
                 maxlength="500"
                 aria-describedby="camera-rtsp-help"
               />
               <p id="camera-rtsp-help" class="text-xs text-muted-foreground">
-                Opsional. Prediksi melalui RTSP belum tersedia.
+                {{ editingCamera ? `Sumber ${editingCamera.rtsp_configured ? 'sudah' : 'belum'} dikonfigurasi. Kosong berarti tidak diubah; isi hanya untuk mengganti sumber.` : 'Opsional. URL hanya dikirim ke backend saat disimpan, tidak ditampilkan kembali.' }}
               </p>
+              <Button v-if="editingCamera?.rtsp_configured" variant="outline" class="text-destructive" :disabled="saving || removingSource" @click="confirmRemoveSource">Hapus Sumber RTSP</Button>
             </div>
             <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2">
               <div class="space-y-2">
@@ -216,10 +220,10 @@
             <AlertDescription>{{ saveError }}</AlertDescription>
           </Alert>
           <DialogFooter>
-            <Button variant="outline" :disabled="saving" @click="setCameraDialogOpen(false)"
+            <Button variant="outline" :disabled="saving || removingSource" @click="setCameraDialogOpen(false)"
               >Batal</Button
             >
-            <Button type="submit" :disabled="saving" :aria-busy="saving">
+            <Button type="submit" :disabled="saving || removingSource" :aria-busy="saving">
               {{
                 saving
                   ? 'Menyimpan kamera...'
@@ -232,6 +236,20 @@
         </form>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog :open="isRemoveSourceDialogOpen" @update:open="value => { if (!removingSource) isRemoveSourceDialogOpen = value }">
+      <AlertDialogContent @close-auto-focus="restoreSourceFocus" @escape-key-down="event => { if (removingSource) event.preventDefault() }">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Sumber RTSP?</AlertDialogTitle>
+          <AlertDialogDescription>Sumber untuk {{ editingCamera?.name }} akan dihapus dan stream dinonaktifkan. Draf metadata belum disimpan.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <Alert v-if="removeSourceError" variant="destructive"><AlertTitle>Gagal menghapus sumber</AlertTitle><AlertDescription>{{ removeSourceError }}</AlertDescription></Alert>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="removingSource">Batal</AlertDialogCancel>
+          <Button variant="destructive" :disabled="removingSource" :aria-busy="removingSource" @click="removeSource">{{ removingSource ? 'Menghapus sumber...' : 'Hapus Sumber' }}</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <AlertDialog :open="isDeleteDialogOpen" @update:open="setDeleteDialogOpen">
       <AlertDialogContent @close-auto-focus="restoreFocus" @escape-key-down="preventWhileDeleting">
@@ -297,6 +315,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/composables/useToast'
+import { useConnectionScope } from '@/composables/useConnectionScope'
 import { useApiStore } from '@/stores/api'
 import {
   listCameras,
@@ -310,6 +329,7 @@ import type { Camera } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
+const isActive = useConnectionScope()
 const view = ref<HTMLElement | null>(null)
 let dialogTrigger: HTMLElement | null = null
 const cameras = ref<Camera[]>([])
@@ -325,6 +345,22 @@ const isDeleteDialogOpen = ref(false)
 const deletingCamera = ref<Camera | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
+const isRemoveSourceDialogOpen = ref(false)
+const removingSource = ref(false)
+const removeSourceError = ref('')
+let sourceTrigger: HTMLElement | null = null
+
+function confirmRemoveSource(event: MouseEvent) {
+  sourceTrigger = event.currentTarget as HTMLElement
+  removeSourceError.value = ''
+  isRemoveSourceDialogOpen.value = true
+}
+
+function restoreSourceFocus(event: Event) {
+  event.preventDefault()
+  const target = sourceTrigger?.isConnected ? sourceTrigger : document.getElementById('camera-rtsp')
+  target?.focus()
+}
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
@@ -338,21 +374,26 @@ async function fetchCameras() {
   loadError.value = ''
   try {
     const response = await listCameras()
+    if (!isActive()) return
     cameras.value = response.items
     cameraStatuses.value = Object.fromEntries(
       response.items.map((camera) => [camera.id, 'loading']),
     )
   } catch (error: unknown) {
+    if (!isActive()) return
     loadError.value = errorMessage(error)
   } finally {
     loading.value = false
   }
   if (loadError.value) return
   for (const camera of cameras.value) {
+    if (!isActive()) return
     try {
       const detail = await getCamera(camera.id)
+      if (!isActive()) return
       cameraStatuses.value[camera.id] = detail.active_calibration_id ? 'active' : 'none'
     } catch {
+      if (!isActive()) return
       cameraStatuses.value[camera.id] = 'error'
     }
   }
@@ -383,7 +424,7 @@ function editCamera(camera: Camera, event: MouseEvent) {
 }
 
 function setCameraDialogOpen(open: boolean) {
-  if (saving.value) return
+  if (saving.value || removingSource.value || isRemoveSourceDialogOpen.value) return
   isCameraDialogOpen.value = open
   if (!open) {
     editingCamera.value = null
@@ -393,23 +434,26 @@ function setCameraDialogOpen(open: boolean) {
 }
 
 function preventWhileSaving(event: Event) {
-  if (saving.value) event.preventDefault()
+  if (saving.value || removingSource.value || isRemoveSourceDialogOpen.value) event.preventDefault()
 }
 
 async function saveCamera() {
-  if (saving.value) return
+  if (saving.value || removingSource.value || isRemoveSourceDialogOpen.value) return
   saveError.value = ''
   saving.value = true
   try {
     const payload = cameraPayload(form.value, !!editingCamera.value)
     if (editingCamera.value) {
       await apiUpdateCamera(editingCamera.value.id, payload)
+      if (!isActive()) return
       toast.success('Kamera berhasil diperbarui')
     } else {
       await apiCreateCamera(payload)
+      if (!isActive()) return
       toast.success('Kamera berhasil ditambahkan')
     }
   } catch (error: unknown) {
+    if (!isActive()) return
     saveError.value = errorMessage(error)
     toast.error('Gagal menyimpan kamera', { description: saveError.value })
     return
@@ -446,8 +490,10 @@ async function deleteCamera() {
   deleteError.value = ''
   try {
     await apiDeleteCamera(deletingCamera.value.id)
+    if (!isActive()) return
     toast.success('Kamera berhasil dihapus')
   } catch (error: unknown) {
+    if (!isActive()) return
     deleteError.value = errorMessage(error)
     toast.error('Gagal menghapus kamera', { description: deleteError.value })
     return
@@ -457,6 +503,25 @@ async function deleteCamera() {
   dialogTrigger = null
   setDeleteDialogOpen(false)
   await fetchCameras()
+}
+
+async function removeSource() {
+  if (!editingCamera.value || removingSource.value) return
+  removingSource.value = true
+  removeSourceError.value = ''
+  try {
+    const camera = await apiUpdateCamera(editingCamera.value.id, { rtsp_url: null })
+    if (!isActive()) return
+    editingCamera.value = camera
+    form.value.rtsp_url = ''
+    cameras.value = cameras.value.map(item => item.id === camera.id ? camera : item)
+    isRemoveSourceDialogOpen.value = false
+    toast.success('Sumber RTSP dihapus')
+  } catch (error) {
+    if (isActive()) removeSourceError.value = errorMessage(error)
+  } finally {
+    removingSource.value = false
+  }
 }
 
 onMounted(fetchCameras)

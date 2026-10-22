@@ -7,7 +7,6 @@ describe('camera form payload', () => {
     const payload = cameraPayload({ ...createCameraForm(), name: 'Kamera fixture UI' })
     expect(JSON.parse(JSON.stringify(payload))).toEqual({
       name: 'Kamera fixture UI',
-      rtsp_url: '',
       resolution_w: 1920,
       resolution_h: 1080,
       fps: 15,

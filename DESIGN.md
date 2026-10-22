@@ -40,7 +40,7 @@ Recommended primary sections:
 - **Referensi Tanah:** define matching image/world points, select world units, inspect the generated ground model, and preview BEV when supported.
 - **Analisis Sampah:** choose a camera, check prerequisites, upload an image, configure supported inference options, submit prediction, and inspect outputs.
 - **Riwayat Analisis:** build a persistent history view only if the backend exposes a suitable endpoint. Do not simulate persistence.
-- **Pengaturan:** API base URL and connection status. Never expose a privileged production secret in the client bundle.
+- **Pengaturan:** backend origin, health probe, and separately verified camera-read access. Never expose a privileged production secret in the client bundle.
 
 Prefer a useful empty state over a dashboard filled with placeholder cards.
 
@@ -67,19 +67,24 @@ When a step is blocked, explain why and provide a direct route to the relevant s
 6. Label volume methods distinctly (for example, grid/voxel and convex hull) and show `m³` and `L` when available.
 7. Convert technical errors into readable messages without exposing stack traces.
 
-**Current limitation:** the prediction route accepts source types including RTSP variants, but the current handler raises `NotImplementedError` for RTSP and processes uploaded images synchronously despite returning HTTP 202. Implement upload-first UI; do not claim RTSP or background-job polling works until verified.
+**Current backend contract (22 October 2026):** `upload`, `rtsp_frame`, and `latest_rtsp` create persisted queued jobs with HTTP 202. History and status are read from prediction GET endpoints. RTSP sources omit file/timestamp. Frontend stream/capture/snapshot/prediction workflows are being integrated in stages; code or mock signaling is not evidence of live playback or inference. The public API cannot verify depth-scale readiness.
+
+Historical limitation: the previous handler rejected RTSP and ran upload prediction synchronously despite HTTP 202. This remains a record of the old implementation, not a description of the MediaMTX backend.
 
 ## 6. Backend integration contract
 
 - Configure the backend origin with `VITE_API_BASE_URL`; document a local example in `.env.example`.
 - Inspect the running backend's `/openapi.json` and source before relying on routes, payloads, or response shapes.
-- Routes are currently mounted directly, such as `/cameras`, `/cameras/{camera_id}/calibrations`, `/cameras/{camera_id}/ground-references`, and `/cameras/{camera_id}/predict`. Do not assume an `/api/v1` prefix.
+- The verified MediaMTX contract mounts camera operations at `/api/v1/cameras/{camera_id}/...`. Store the origin without the prefix and use the central `cameraPath()` helper exactly once. `/health`, `/docs`, and `/files` are outside the prefix. Previous unprefixed examples describe the old contract.
 - Authentication currently uses the `X-API-Key` header. Prefer the live contract and implementation over potentially stale README examples.
-- Centralize HTTP behavior in `src/api/`; define endpoint-specific request and response types.
+- Centralize HTTP behavior in the existing `src/services/`; define endpoint-specific request and response types.
 - Do not manually set a multipart `Content-Type` boundary when using browser `FormData`.
 - Treat IDs as opaque UUID strings.
 - Normalize network, HTTP, validation, and authorization errors in one place.
 - Render artifact URLs only when returned by the API; never guess storage paths.
+- Fetch binary artifacts with `X-API-Key`, trusted backend origin/endpoint validation, no cookies, and rejected redirects. Components own and revoke object URLs on replacement, disposal, and connection changes.
+- RTSP inputs are masked and replacement-only. An empty edit preserves the source; explicit confirmed removal sends `rtsp_url: null`. Response URLs are redacted by the backend.
+- Separate backend health from key verification and media status. A healthy database probe does not verify workers, MediaMTX, camera access, or other operation scopes.
 
 ### Frontend secret handling
 

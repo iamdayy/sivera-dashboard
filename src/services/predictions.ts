@@ -1,4 +1,4 @@
-import { apiClient, normalizeApiError, artifactUrl } from './api'
+import { apiClient, cameraPath, normalizeApiError } from './api'
 import type { PredictionJob, SubmitPredictionResult, PredictionOutput, DetectedInstance, VolumeEstimate, PaginatedList } from '@/types'
 
 export type PredictionJobList = PaginatedList<PredictionJob>
@@ -7,7 +7,7 @@ export async function listPredictionJobs(cameraId: string, page = 1, pageSize = 
   try {
     const params = new URLSearchParams({ page: page.toString(), page_size: pageSize.toString() })
     if (status) params.append('status', status)
-    const response = await apiClient.get<PredictionJobList>(`/cameras/${cameraId}/predict?${params}`)
+    const response = await apiClient.get<PredictionJobList>(cameraPath(cameraId, `/predict?${params}`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -16,7 +16,7 @@ export async function listPredictionJobs(cameraId: string, page = 1, pageSize = 
 
 export async function getPredictionJob(cameraId: string, jobId: string): Promise<PredictionJob> {
   try {
-    const response = await apiClient.get<PredictionJob>(`/cameras/${cameraId}/predict/${jobId}`)
+    const response = await apiClient.get<PredictionJob>(cameraPath(cameraId, `/predict/${jobId}`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -48,7 +48,7 @@ export async function submitPrediction(cameraId: string, payload: SubmitPredicti
     if (payload.timestamp) formData.append('timestamp', payload.timestamp)
     if (payload.source_type === 'upload' && payload.file) formData.append('file', payload.file)
 
-    const response = await apiClient.post<SubmitPredictionResult>(`/cameras/${cameraId}/predict`, formData)
+    const response = await apiClient.post<SubmitPredictionResult>(cameraPath(cameraId, '/predict'), formData)
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -57,21 +57,20 @@ export async function submitPrediction(cameraId: string, payload: SubmitPredicti
 
 export async function listPredictionOutputs(cameraId: string, jobId: string): Promise<PredictionOutput[]> {
   try {
-    const response = await apiClient.get<{ outputs: PredictionOutput[] }>(`/cameras/${cameraId}/predict/${jobId}/outputs`)
+    const response = await apiClient.get<{ outputs: PredictionOutput[] }>(cameraPath(cameraId, `/predict/${jobId}/outputs`))
     return response.data.outputs
   } catch (error) {
     throw normalizeApiError(error)
   }
 }
 
-export function getOutputUrl(cameraId: string, jobId: string, outputType: string): string {
-  const base = new URL(apiClient.defaults.baseURL || '', window.location.origin)
-  return new URL(`cameras/${cameraId}/predict/${jobId}/outputs/${outputType}`, base).toString()
+export function getOutputPath(cameraId: string, jobId: string, outputType: string): string {
+  return cameraPath(cameraId, `/predict/${encodeURIComponent(jobId)}/outputs/${encodeURIComponent(outputType)}`)
 }
 
 export async function getPredictionInstances(cameraId: string, jobId: string): Promise<DetectedInstance[]> {
   try {
-    const response = await apiClient.get<DetectedInstance[]>(`/cameras/${cameraId}/predict/${jobId}/instances`)
+    const response = await apiClient.get<DetectedInstance[]>(cameraPath(cameraId, `/predict/${jobId}/instances`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -80,7 +79,7 @@ export async function getPredictionInstances(cameraId: string, jobId: string): P
 
 export async function getPredictionVolumes(cameraId: string, jobId: string): Promise<VolumeEstimate[]> {
   try {
-    const response = await apiClient.get<VolumeEstimate[]>(`/cameras/${cameraId}/predict/${jobId}/volumes`)
+    const response = await apiClient.get<VolumeEstimate[]>(cameraPath(cameraId, `/predict/${jobId}/volumes`))
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -98,20 +97,21 @@ export async function checkPredictionPrerequisites(cameraId: string): Promise<Pr
   
   // Check active calibration
   try {
-    await apiClient.get(`/cameras/${cameraId}/calibrations/active`)
-  } catch {
+    await apiClient.get(cameraPath(cameraId, '/calibrations/active'))
+  } catch (error) {
+    if (normalizeApiError(error).status !== 404) throw error
     missing.push('Kalibrasi aktif')
   }
 
   // Check active ground model
   try {
-    await apiClient.get(`/cameras/${cameraId}/ground-models/active`)
-  } catch {
+    await apiClient.get(cameraPath(cameraId, '/ground-models/active'))
+  } catch (error) {
+    if (normalizeApiError(error).status !== 404) throw error
     missing.push('Model ground aktif')
   }
 
-  // Note: Depth scale is created during prediction pipeline
-  // No separate API endpoint to check
+  // The public API has no depth-scale provisioning or readiness endpoint.
 
   return {
     has_active_calibration: !missing.includes('Kalibrasi aktif'),

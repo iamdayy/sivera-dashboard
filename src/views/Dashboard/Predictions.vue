@@ -263,10 +263,7 @@
           <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <div v-for="output in jobOutputs" :key="output.id" class="border border-gray-200 rounded-lg overflow-hidden">
               <div class="aspect-video bg-gray-100 relative">
-                <img v-if="output.mime_type?.startsWith('image/')" :src="getOutputUrl(selectedJob.camera_id, selectedJob.id, output.output_type)" :alt="output.output_type" class="w-full h-full object-cover" @error="handleImageError(output)" />
-                <div v-else class="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                  {{ output.output_type }} ({{ output.mime_type }})
-                </div>
+                <AuthenticatedArtifact :path="getOutputPath(selectedJob.camera_id, selectedJob.id, output.output_type)" :label="output.output_type" />
               </div>
               <div class="p-2 bg-gray-50">
                 <p class="text-xs font-medium text-gray-900 truncate">{{ formatOutputType(output.output_type) }}</p>
@@ -347,12 +344,15 @@ import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
 import { onMounted, ref, computed } from 'vue'
 import { listCameras as apiListCameras } from '@/services/cameras'
-import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputUrl, checkPredictionPrerequisites } from '@/services/predictions'
+import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputPath, checkPredictionPrerequisites } from '@/services/predictions'
+import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
+import { useConnectionScope } from '@/composables/useConnectionScope'
 import { useJobPolling } from '@/composables/useJobPolling'
 import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate, PredictionPrerequisites } from '@/types'
 
 const apiStore = useApiStore()
 const toast = useToast()
+const isActive = useConnectionScope()
 
 const cameras = ref<Camera[]>([])
 const predictionJobs = ref<PredictionJob[]>([])
@@ -372,6 +372,7 @@ const loadingJobDetail = ref(false)
 const { startPolling, isPolling, getPollingStatus, stopPolling } = useJobPolling(
   apiGetPredictionJob,
   async (updatedJob) => {
+    if (!isActive()) return
     toast.success('Prediksi selesai', {
       description: `Job ${updatedJob.id.substring(0, 8)}... ${updatedJob.status === 'done' ? 'berhasil' : 'gagal'}`,
     })
@@ -400,12 +401,13 @@ const fetchCameras = async () => {
   if (!apiStore.hasApiKey) return
   try {
     const response = await apiListCameras()
+    if (!isActive()) return
     cameras.value = response.items
     if (cameras.value.length > 0 && !selectedCameraId.value) {
       selectedCameraId.value = cameras.value[0]!.id
     }
   } catch (error) {
-    console.error('Failed to fetch cameras:', error)
+    if (!isActive()) return
     toast.error('Gagal memuat data camera')
   }
 }
@@ -413,8 +415,10 @@ const fetchCameras = async () => {
 const fetchPredictionJobs = async () => {
   if (!selectedCameraId.value || !apiStore.hasApiKey) return
   loading.value = true
+  const cameraId = selectedCameraId.value
   try {
-    const response = await apiListPredictionJobs(selectedCameraId.value)
+    const response = await apiListPredictionJobs(cameraId)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     predictionJobs.value = response.items
     // Start polling for jobs that are still in progress
     for (const job of response.items) {
@@ -423,7 +427,7 @@ const fetchPredictionJobs = async () => {
       }
     }
   } catch (error) {
-    console.error('Failed to fetch prediction jobs:', error)
+    if (!isActive()) return
     toast.error('Gagal memuat data prediksi')
   } finally {
     loading.value = false
@@ -454,7 +458,7 @@ const checkPrerequisites = async () => {
   try {
     prerequisites.value = await checkPredictionPrerequisites(selectedCameraId.value)
   } catch (error) {
-    console.error('Failed to check prerequisites:', error)
+    if (!isActive()) return
     prerequisites.value = {
       has_active_calibration: false,
       has_active_ground_model: false,
@@ -528,6 +532,7 @@ const submitPrediction = async () => {
       return_outputs: predForm.value.return_outputs,
       file: uploadedImage.value,
     })
+    if (!isActive()) return
 
     toast.success('Prediksi berhasil dikirim', {
       description: `Job ID: ${result.job_id}`,
@@ -537,7 +542,7 @@ const submitPrediction = async () => {
     // Start polling for the new job
     startPolling(selectedCameraId.value, result.job_id)
   } catch (error: unknown) {
-    console.error('Failed to submit prediction:', error)
+    if (!isActive()) return
     const err = error as { response?: { data?: { detail?: string } }; message?: string }
     toast.error('Gagal menjalankan prediksi', {
       description: err.response?.data?.detail || err.message,
@@ -556,6 +561,7 @@ const viewJobDetails = async (jobId: string) => {
       apiGetPredictionInstances(selectedCameraId.value, jobId),
       apiGetPredictionVolumes(selectedCameraId.value, jobId),
     ])
+    if (!isActive()) return
     selectedJob.value = job
     jobOutputs.value = outputs
     jobInstances.value = instances
@@ -565,7 +571,7 @@ const viewJobDetails = async (jobId: string) => {
       startPolling(selectedCameraId.value, jobId)
     }
   } catch (error) {
-    console.error('Failed to fetch job details:', error)
+    if (!isActive()) return
     toast.error('Gagal memuat detail job')
   } finally {
     loadingJobDetail.value = false

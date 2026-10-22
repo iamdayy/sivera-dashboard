@@ -30,7 +30,7 @@ test('Settings validates access against the UI fixture', async ({ page }) => {
   await page.goto('/dashboard/settings')
   await page.getByPlaceholder('Masukkan API Key Anda').fill('ui-fixture-not-a-credential')
   await page.getByRole('button', { name: 'Simpan Konfigurasi' }).click()
-  await expect(page.getByText('API Key valid dan memiliki akses', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('Akses camera:read terverifikasi. Izin operasi lain belum diperiksa.')
 })
 
 test('Cameras table retains its domain columns', async ({ page }) => {
@@ -76,6 +76,6 @@ test('Mobile navigation opens and navigates', async ({ page }) => {
   await page.getByRole('button', { name: 'Buka menu navigasi' }).click()
   const menu = page.locator('#mobile-menu')
   await expect(menu).toBeVisible()
-  await menu.getByRole('link', { name: 'Beranda', exact: true }).click()
+  await menu.getByRole('menuitem', { name: 'Beranda', exact: true }).click()
   await expect(page).toHaveURL(/\/$/)
 })

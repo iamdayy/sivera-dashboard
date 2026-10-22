@@ -1,63 +1,71 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { checkHealth } from '@/services/api'
-import { apiClient } from '@/services/api'
+import { computed, ref, watch } from 'vue'
+import { assertCurrentConnection, checkHealth, clearConnectionKey, connectionState, getConnectionContext, normalizeApiError, setConnection } from '@/services/api'
+import { listCameras } from '@/services/cameras'
 import type { HealthStatus } from '@/types'
 
-export type ConnectionStatus = 'idle' | 'checking' | 'ok' | 'error'
+export type ConnectionStatus = 'idle' | 'checking' | 'ok' | 'degraded' | 'error'
+export type AccessStatus = 'unverified' | 'checking' | 'verified' | 'denied' | 'error'
 
 export const useApiStore = defineStore('api', () => {
-  // Key hanya dari input pengguna; tidak pernah ada fallback bawaan.
-  const apiKey = ref<string | null>(localStorage.getItem('api_key'))
+  const apiKey = ref(getConnectionContext().key)
   const hasApiKey = computed(() => Boolean(apiKey.value))
-  const isAuthenticated = computed(() => Boolean(apiKey.value))
+  const accessStatus = ref<AccessStatus>('unverified')
+  const isAuthenticated = computed(() => accessStatus.value === 'verified')
   const connectionStatus = ref<ConnectionStatus>('idle')
+  const origin = computed(() => connectionState.value.origin)
+  const generation = computed(() => connectionState.value.generation)
+  const configurationNotice = computed(() => connectionState.value.notice)
+
+  watch(generation, () => {
+    apiKey.value = getConnectionContext().key
+    accessStatus.value = 'unverified'
+    connectionStatus.value = 'idle'
+  }, { flush: 'sync' })
+
+  function configure(url: string, key: string) {
+    return setConnection(url, key)
+  }
 
   function setApiKey(key: string): void {
-    apiKey.value = key
-    localStorage.setItem('api_key', key)
+    configure(origin.value, key)
   }
 
   function clearApiKey(): void {
-    apiKey.value = null
-    localStorage.removeItem('api_key')
-    connectionStatus.value = 'idle'
+    clearConnectionKey()
   }
 
-  // /health tanpa auth: hanya membuktikan konektivitas, bukan validitas key.
   async function testConnection(): Promise<HealthStatus> {
+    const context = getConnectionContext()
     connectionStatus.value = 'checking'
     try {
       const health = await checkHealth()
-      connectionStatus.value = 'ok'
+      assertCurrentConnection(context)
+      connectionStatus.value = health.status === 'healthy' && health.database === 'connected' ? 'ok' : 'degraded'
       return health
     } catch (error) {
+      assertCurrentConnection(context)
       connectionStatus.value = 'error'
       throw error
     }
   }
 
-  // Test API key validity by calling an authenticated endpoint
   async function testApiKey(): Promise<{ valid: boolean; message: string }> {
-    if (!hasApiKey.value) {
-      return { valid: false, message: 'API Key belum disetel' }
-    }
+    if (!hasApiKey.value) return { valid: false, message: 'API Key belum disetel.' }
+    const context = getConnectionContext()
+    accessStatus.value = 'checking'
     try {
-      // Try to list cameras (requires camera:read scope)
-      const response = await apiClient.get('/cameras', { params: { page: 1, page_size: 1 } })
-      return { valid: true, message: 'API Key valid dan memiliki akses' }
-    } catch (error: unknown) {
-      const err = error as { response?: { status?: number; data?: { detail?: string; message?: string } } }
-      if (err.response?.status === 401) {
-        return { valid: false, message: 'API Key tidak valid atau sudah kedaluwarsa' }
-      }
-      if (err.response?.status === 403) {
-        return { valid: false, message: 'API Key tidak memiliki izin yang cukup (scope camera:read diperlukan)' }
-      }
-      const msg = err.response?.data?.detail || err.response?.data?.message || String(error)
-      return { valid: false, message: `Gagal memvalidasi API Key: ${msg}` }
+      await listCameras(1, 1)
+      assertCurrentConnection(context)
+      accessStatus.value = 'verified'
+      return { valid: true, message: 'Akses camera:read terverifikasi. Izin operasi lain belum diperiksa.' }
+    } catch (error) {
+      assertCurrentConnection(context)
+      const normalized = normalizeApiError(error)
+      accessStatus.value = normalized.status === 401 || normalized.status === 403 ? 'denied' : 'error'
+      return { valid: false, message: normalized.status === 403 ? 'Akses ditolak. Scope camera:read dan izin kamera diperlukan; izin operasi lain belum diperiksa.' : normalized.message }
     }
   }
 
-  return { apiKey, hasApiKey, isAuthenticated, connectionStatus, setApiKey, clearApiKey, testConnection, testApiKey }
+  return { apiKey, hasApiKey, isAuthenticated, origin, generation, configurationNotice, accessStatus, connectionStatus, configure, setApiKey, clearApiKey, testConnection, testApiKey }
 })
