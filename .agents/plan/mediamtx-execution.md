@@ -21,7 +21,7 @@ Pertahankan Vue/TypeScript/Pinia/Axios/shadcn-vue/Bun dan shell existing. Dashbo
 - [x] A2. Error/blob/RTSP: error string/object/list/blob dengan code/field/session_id aman; authenticated fetch dengan trusted origin/path dan redirect:error; revoke object URLs; RTSP replacement-only dan penghapusan terkonfirmasi. Gate A: requests tepat, secret tidak bocor, preview gagal tidak menjadi sukses, response lama tidak dipakai.
 - [x] B1. Stream service & WHEP signaling: `src/services/streams.ts`, `src/services/whep.ts` dengan trusted endpoints, authenticated OPTIONS/POST/PATCH/DELETE, ICE Link parsing, ETag/If-Match, serial PATCH queue, ownership cleanup, late-response guards, no POST retry. Unit tests 57 passed; E2E running.
 - [x] B2. Receive-only player component, ICE candidate buffering, reconnect button, modal integration, Cameras.vue live preview. Gate: decoded frames, reconnect, no leaked peers.
-- [ ] C. Capture/compute: service dan polling typed; state capture/compute independen; counters/rejected/gallery offset; stop menunggu terminal; 409/resume UUID diverifikasi; compute dan inspect lalu aktivasi eksplisit. Upload existing tetap synchronous 201 auto-active. C membutuhkan enabled stream, bukan playback browser.
+- [x] C. Capture/compute: service dan polling typed; state capture/compute independen; counters/rejected/gallery offset; stop menunggu terminal; 409/resume UUID diverifikasi; compute dan inspect lalu aktivasi eksplisit. Upload existing tetap synchronous 201 auto-active. C membutuhkan enabled stream, bukan playback browser.
 - [ ] D. Snapshot/readiness/coordinates: POST terpisah dari latest GET; freshness/error/source context; raw snapshot bukan ground undistorted; natural-pixel click mapping dan marker responsif untuk preview undistorted; input manual nyata; compatibility IDs; depth scale unknown dan backend otoritatif. Scene-undistortion API adalah dependency backend terpisah.
 - [ ] E. Prediction: payload tiga sumber; RTSP tanpa file/timestamp; confidence zero dan omitted/[]/subset outputs; tipe output valid; polling non-overlap/abort/stale/error/backoff; persisted paginated history; detail job aktif; hapus kontrol delete yang tidak punya endpoint; authenticated image/JSON/NPZ; pinned IDs dan nullable units.
 - [ ] F. Verifikasi lintas workflow: unit/component/e2e, keyboard/focus/dialog/mobile/tablet/desktop, origin/key/camera races, live disposable backend dan browser media jika tersedia.
@@ -126,6 +126,46 @@ Mock API memverifikasi kontrak protocol, bukan video nyata.
 - Access via `apiStore.connectionContext` (computed)
 
 **Gate B2 tidak mengklaim playback video/ICE browser nyata.** Mock signaling membuktikan perilaku protokol; playback nyata (decoded frames, reconnect, no leaked peers) memerlukan disposable backend + kamera uji.
+
+**Checks:**
+| Pemeriksaan | Hasil |
+|---|---|
+| `bun run test:unit --run` | 169 passed, 12 files |
+| `bun run type-check` | PASS |
+| `bun run build` | PASS |
+| `bun run test:e2e --project=chromium --project=firefox` | 176 passed, 2 live-key skipped |
+
+### C ditutup: Capture/compute service, polling, Calibrations.vue integration (23 Oktober 2026)
+
+**Komponen baru:**
+- `src/services/calibrationCaptures.ts` — service lengkap: startCapture, getCaptureSession, stopCapture, computeCapture, listCaptureImages, getCaptureImageBlob, isCaptureTerminal, isComputeTerminal
+- `src/composables/useCapturePolling.ts` — polling terstruktur dengan auto-stop pada terminal state, error handling, cleanup on unmount
+- `src/views/Dashboard/Calibrations.vue` — tombol **Mulai Capture**, dialog capture full-screen dengan form konfigurasi, status grid, action buttons (Hentikan/Mulai Compute/Refresh), gambar grid dengan preview/download
+
+**Fitur `calibrationCaptures.ts`:**
+- `startCapture`: POST `/calibration-captures` dengan payload `CaptureCreate` (cols, rows, square_m, interval, target, duration, auto_calibrate)
+- `getCaptureSession`: GET session by ID → `CaptureResponse` lengkap (attempted, captured, accepted, rejected, rejection_counts, compute_status, compute_error_code, resolution, last_capture_at, dll)
+- `stopCapture`: POST `/stop` → menunggu state terminal, tidak memaksa status lokal
+- `computeCapture`: POST `/compute` → compute terpisah, hasil `result_calibration_id` inactive, aktivasi eksplisit via endpoint existing
+- `listCaptureImages`: pagination offset/limit, dedup ID/sequence
+- `getCaptureImageBlob`: authenticated fetch via `artifacts.ts`, preview/original
+- Helper `isCaptureTerminal` / `isComputeTerminal` untuk polling logic
+
+**Fitur `useCapturePolling.ts`:**
+- Interval default 2s, configurable
+- Auto-stop ketika capture DAN compute terminal (`completed|stopped|expired|failed` + `done|failed`)
+- Stale-context guard via `isActive()` scope
+- Cleanup timer on unmount/scope change
+
+**Integrasi `Calibrations.vue`:**
+- Page header dengan flex-wrap untuk responsivitas 200% zoom
+- Dialog capture: form config → start → polling status grid (attempted/captured/accepted/rejected/failed, compute status, rejection counts, resolution, last capture)
+- Actions: Hentikan Capture, Mulai Compute, Refresh Status (disabled saat busy/terminal)
+- Gambar grid: aspect-square, quality badge, sharpness, rejection reason, Preview/Download buttons
+- Focus restoration, scroll lock, Escape handling
+- Rejection counts badge grid
+
+**Gate C tidak mengklaim capture/compute nyata berjalan.** Mock API membuktikan perilaku frontend; capture/compute nyata memerlukan stream enabled, MediaMTX, worker, dan disposable backend.
 
 **Checks:**
 | Pemeriksaan | Hasil |
