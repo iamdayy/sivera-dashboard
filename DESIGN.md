@@ -207,3 +207,37 @@ Every workflow page must include a useful empty state and an explicit recovery p
 - A result's units, method, source, and validation limitations are visible.
 - Keyboard, mobile-width, loading, empty, and error states are tested.
 - Mocked tests are labeled as such; end-to-end integration is verified against the current backend contract where the environment permits.
+
+
+## User journey and user management
+
+### Current scope
+
+SIVERA is designed for one organization in the current phase. Do not introduce multi-organization screens or claim tenant isolation. Keep organization ownership as a future extension point; implement it only with a deliberate data/API migration and authorization plan.
+
+### End-to-end journey
+
+1. Sign in and restore the session, if end-user authentication exists in the deployed contract.
+2. Open the dashboard and understand system health versus measurement readiness.
+3. Complete missing setup: camera/source, calibration, ground model/reference, and compatible depth scale.
+4. Start a measurement from a supported image/camera source.
+5. Follow the persisted job through pending/processing/done/failed.
+6. Review volume, unit, method, and available source/configuration context.
+7. Open history and inspect a previous result or start another measurement, only where the API supports these actions.
+
+Show a clear next action at each blocked step. Do not treat 202 Accepted as a completed prediction.
+
+### Account management and permissions
+
+Proposed role model (subject to backend capabilities):
+- Administrator: manage users/access and authorized system configuration.
+- Operator: run measurements and review permitted jobs/results.
+- Viewer: read permitted results and history only.
+
+These roles are a product proposal, not a statement that they exist in the current API. The current X-API-Key service authentication must not be presented as an end-user login/session system. Before designing account pages, confirm the backend supports user identity, session lifecycle, role/permission assignment, and user administration. If not, record authentication and authorization as a prerequisite rather than simulating them in the browser.
+
+When supported, user management should include a searchable list, role and account status, supported invitation/creation flow, role changes, activate/deactivate confirmation, explicit handling for 401/403 and expired sessions, and protection against removing the last administrator where applicable. Enforce permissions in the backend; route guards are supplementary only.
+
+### Future multi-organization readiness
+
+Keep authorization checks and data access in centralized domain/service boundaries so an organization scope can be added later. Do not add speculative tenant tables or organization_id fields in this single-organization phase. Before multi-organization launch, define tenant ownership for cameras, calibrations, ground models, depth scales, jobs, artifacts, and users; add server-side tenant scoping, migration/backfill, cross-tenant access tests, and auditability.
