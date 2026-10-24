@@ -139,3 +139,71 @@ Keep domain logic out of presentation components where practical. Every data vie
 - Keyboard operation and responsive layouts are checked.
 - Integration is verified against the current OpenAPI schema and a running backend when available.
 - No secrets, fabricated API data, dead controls, or unverified endpoint assumptions.
+
+## 11. UX audit findings and required behavior
+
+### Confirmed implementation issue
+
+`src/services/readiness.ts` checks `activeGroundModelId` while it is still `null`; it never assigns that ID after initialization. This can report a missing ground model even when one exists. Fix the data flow and cover it with regression tests before visual redesign. Do not assume every prediction route is broken: inspect all call paths and make their prerequisite behavior consistent.
+
+### UX objective
+
+A new operator should be able to answer at any point:
+- What step am I on?
+- Is the camera/source actually available?
+- What is preventing measurement, if anything?
+- What will happen after I submit?
+- Is the result complete, and what does its volume number mean?
+- What should I do if the process fails?
+
+### Primary workflow
+
+1. **Connection and source:** distinguish backend/API availability, camera configuration, stream runtime/synchronization, and availability of a usable frame.
+2. **Calibration:** show active version, image dimensions/intrinsics readiness, and whether recalibration is required.
+3. **Ground reference/model:** explain required image/world correspondences and clearly show which calibration the active model belongs to.
+4. **Depth scale:** show whether a scale exists for the selected ground model and whether it is accepted/active. Do not infer this from a different endpoint. Verify the currently deployed OpenAPI contract before implementing the adapter.
+5. **Preflight:** summarize all required checks in one place; identify the failed prerequisite, give a direct link to fix it, and re-run checks after the user returns.
+6. **Measurement:** show submission/queued/processing states from persisted job status. Do not invent percentage progress or turn a fixed advisory duration into a countdown/SLA.
+7. **Result:** show the primary volume estimate, method, units, source image/time, camera, job, and configuration/version context when returned by the API. Keep diagnostic outputs available without forcing every user to interpret them.
+
+### Status semantics
+
+Use text and icons in addition to color. Keep these concepts separate:
+- **Backend health:** API's health response only.
+- **Access:** API-key validity and operation scope.
+- **Camera/stream:** desired configuration, runtime status, synchronization, and frame freshness are different.
+- **Measurement readiness:** compatible calibration, ground reference/model, depth scale, and other backend-declared prerequisites.
+- **Job state:** pending/processing/done/failed from the persisted prediction job.
+- **Result validity:** whether required output values exist and whether physical accuracy has been validated. A successful job does not certify metric accuracy.
+
+### Empty, blocked, and error states
+
+Every workflow page must include a useful empty state and an explicit recovery path. Example: “Model ground belum tersedia untuk kalibrasi aktif” followed by an action to open Referensi Tanah. If the model belongs to a different calibration, explain the mismatch rather than describing it as simply missing. If a service is unreachable, distinguish connectivity from missing configuration. Preserve user inputs when safe.
+
+### Result presentation and measurement integrity
+
+- Make one physically validated method the primary headline value. Present alternative methods in a clearly labeled comparison/details section, not as interchangeable answers.
+- Always show units (`m³`, `L`, `m²`, `m`) when values exist; never silently turn null/missing/NaN into zero.
+- Label experimental, unvalidated estimates explicitly. A successful inference or a scale-fit acceptance is not proof of real-world accuracy.
+- Provide a visual review path: original image, waste mask/segmentation, depth visualization with legend, and BEV/footprint if the backend actually returns them.
+- Identify the actual volume method. The grid method sums per-cell representative height times cell area; its behavior depends on cell size, sparse-cell threshold, holes, and boundary-cell policy. Explain these settings when relevant and do not imply it is parameter-independent.
+- The current convex-hull method is a 2D hull footprint multiplied by a representative height, not a full 3D convex-hull volume. Do not label it “true 3D convex hull volume.”
+- Attach method and configuration context to results when the API provides it; do not invent confidence scores, uncertainty bounds, or calibration metadata that the backend does not return.
+
+### Accessibility and responsive interaction
+
+- Primary actions must be keyboard accessible and have visible focus.
+- Do not use color as the only status indicator; use text/icons and accessible labels.
+- Keep error messages near the blocked action and preserve a sensible heading hierarchy.
+- At narrow widths, prioritize the primary action, job status, and headline measurement; allow diagnostic images/details to stack rather than overflow.
+- Confirm destructive operations and distinguish a disabled action from a loading action.
+
+### UX acceptance criteria
+
+- A compatible configured camera is not incorrectly blocked by frontend-only readiness logic.
+- Missing, mismatched, and unavailable prerequisites produce different, actionable explanations.
+- A user can submit a prediction and understand persisted job status without guessing.
+- Failed jobs offer a safe recovery path and do not appear as successful results.
+- A result's units, method, source, and validation limitations are visible.
+- Keyboard, mobile-width, loading, empty, and error states are tested.
+- Mocked tests are labeled as such; end-to-end integration is verified against the current backend contract where the environment permits.
