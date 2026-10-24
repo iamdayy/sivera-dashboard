@@ -76,7 +76,7 @@ for (const view of [
   })
 }
 
-test('Prediction source options do not offer working RTSP', async ({ page }) => {
+test('Prediction source options offer RTSP sources', async ({ page }) => {
   await installApiFixture(page, true, [camera])
   await page.goto('/dashboard/predictions')
   for (const name of ['Job ID', 'Sumber', 'Status']) {
@@ -85,8 +85,8 @@ test('Prediction source options do not offer working RTSP', async ({ page }) => 
   await expect(page.getByRole('combobox').first()).toHaveValue(camera.id)
   await page.getByRole('button', { name: 'Jalankan Prediksi Baru', exact: true }).click()
   const source = page.locator('#pred-source-type')
-  await expect(source.locator('option[value="rtsp_frame"]')).toBeDisabled()
-  await expect(source.locator('option[value="latest_rtsp"]')).toBeDisabled()
+  await expect(source.locator('option[value="rtsp_frame"]')).toBeEnabled()
+  await expect(source.locator('option[value="latest_rtsp"]')).toBeEnabled()
   await expect(source.locator('option[value="upload"]')).toBeEnabled()
   await page.getByRole('button', { name: 'Batal' }).click()
   await expect(page.getByRole('heading', { name: 'Jalankan Prediksi Baru', exact: true })).not.toBeVisible()

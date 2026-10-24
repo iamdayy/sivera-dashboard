@@ -3,7 +3,7 @@ import type { ConnectionContext } from './api'
 
 const uuid = '[\\da-fA-F]{8}-[\\da-fA-F]{4}-[\\da-fA-F]{4}-[\\da-fA-F]{4}-[\\da-fA-F]{12}'
 const cameraRoot = `/api/v1/cameras/${uuid}`
-const binaryEndpoints = new RegExp(`^(?:${cameraRoot}/snapshots/${uuid}/image|${cameraRoot}/calibration-captures/${uuid}/images/${uuid}(?:/preview)?|${cameraRoot}/predict/${uuid}/outputs/[a-z][a-z0-9_]*|/files/[^/].*)$`)
+const binaryEndpoints = new RegExp(`^(?:${cameraRoot}/snapshots/${uuid}/image|${cameraRoot}/calibration-captures/${uuid}/images/${uuid}(?:/preview)?|${cameraRoot}/ground-models/${uuid}/depth-scales/test-images/${uuid}/image|${cameraRoot}/predict/${uuid}/outputs/[a-z][a-z0-9_]*|/files/[^/].*)$`)
 
 export function trustedArtifactUrl(path: string, context = getConnectionContext()): string {
   if (!context.origin || !path || path.includes('\\') || /%2f|%5c|%2e/i.test(path)) throw new Error('Alamat artefak tidak diizinkan.')

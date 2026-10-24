@@ -35,6 +35,11 @@ const routes = [
         component: () => import('@/views/Dashboard/GroundReferences.vue')
       },
       {
+        path: 'depth-scales',
+        name: 'DepthScales',
+        component: () => import('@/views/Dashboard/DepthScales.vue')
+      },
+      {
         path: 'predictions',
         name: 'Predictions',
         component: () => import('@/views/Dashboard/Predictions.vue')

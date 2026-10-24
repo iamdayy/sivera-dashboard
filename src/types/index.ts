@@ -178,7 +178,12 @@ export interface HealthStatus {
 export interface PredictionPrerequisites {
   has_active_calibration: boolean
   has_active_ground_model: boolean
+  has_active_depth_scale: boolean
   missing: string[]
+  active_calibration_id: string | null
+  active_ground_model_id: string | null
+  active_depth_scale_id: string | null
+  active_ground_ref_id: string | null
 }
 
 export type StreamStatus = 'disabled' | 'idle' | 'online' | 'offline' | 'unknown'
@@ -264,3 +269,50 @@ export interface SnapshotResponse {
   captured_at: string
   image_url: string
 }
+
+export interface DepthScale {
+  id: string
+  camera_id: string
+  ground_model_id: string
+  depth_model: string
+  scale_s: number
+  offset_b: number
+  residuals: number[] | null
+  mean_residual_m: number | null
+  max_residual_m: number | null
+  clip_min_m: number
+  clip_max_m: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface DepthScaleList {
+  items: DepthScale[]
+  total: number
+}
+
+export interface DepthMeasurement {
+  x: number
+  y: number
+  distance_m: number
+}
+
+export interface DepthScaleCreate {
+  test_image?: string
+  depth_model?: string
+  known_distances: DepthMeasurement[]
+  clip_min_m?: number
+  clip_max_m?: number
+}
+
+export interface DepthScaleImageResponse {
+  image_id: string
+  test_image: string
+  image_url: string
+  width: number
+  height: number
+  coordinate_system: 'undistorted_pixels'
+  distance_type: 'camera_axis_z_m'
+}
+
+export type DepthScaleListResponse = DepthScaleList

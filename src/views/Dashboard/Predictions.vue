@@ -60,7 +60,7 @@
         <div>
           <h2 class="text-lg font-semibold text-text">Prasyarat prediksi</h2>
           <p class="mt-1 text-sm text-text-muted">
-            Prediksi memerlukan kalibrasi aktif dan model ground aktif. Depth scale belum dapat diverifikasi lewat API publik.
+            Prediksi memerlukan kalibrasi aktif, model ground aktif, dan depth scale aktif.
           </p>
         </div>
         <div v-if="checkingPrerequisites" class="flex shrink-0 items-center gap-2 text-sm text-text-muted" role="status">
@@ -122,13 +122,19 @@
 
         <div class="rounded-lg border border-sheet-border bg-sheet p-4">
           <div class="flex items-center gap-2">
-            <HelpCircle class="h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
-            <p class="font-medium text-text">Depth scale</p>
+            <CheckCircle v-if="prerequisites.has_active_depth_scale" class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+            <XCircle v-else class="h-5 w-5 shrink-0 text-negative" aria-hidden="true" />
+            <p class="font-medium text-text">Skala kedalaman aktif</p>
           </div>
           <p class="mt-2 text-sm text-text-muted">
-            Tidak ada endpoint publik untuk memverifikasi kesiapan depth scale. Backend akan menolak prediksi bila komponen ini belum tersedia.
+            {{ prerequisites.has_active_depth_scale ? 'Kalibrasi kedalaman tersedia untuk estimasi volume metrik.' : 'Belum ada skala kedalaman aktif.' }}
           </p>
-          <Badge class="badge-warning mt-2">Belum terverifikasi</Badge>
+          <Badge :class="prerequisites.has_active_depth_scale ? 'badge-positive' : 'badge-negative'" class="mt-2">
+            {{ prerequisites.has_active_depth_scale ? 'Tersedia' : 'Tidak tersedia' }}
+          </Badge>
+          <RouterLink v-if="!prerequisites.has_active_depth_scale" :to="{ path: '/dashboard/depth-scales', query: { camera: selectedCameraId } }" class="btn btn-ghost btn-sm mt-3 min-h-11 w-full justify-center">
+            Kelola Skala Kedalaman
+          </RouterLink>
         </div>
       </div>
 
@@ -299,10 +305,11 @@
               <span class="text-text">Model ground aktif</span>
             </div>
             <div class="flex items-center gap-2">
-              <span class="shrink-0 text-warning">
-                <HelpCircle class="h-4 w-4" aria-hidden="true" />
+              <span class="shrink-0" :class="prerequisitesValue.has_active_depth_scale ? 'text-positive' : 'text-negative'">
+                <CheckCircle v-if="prerequisitesValue.has_active_depth_scale" class="h-4 w-4" aria-hidden="true" />
+                <XCircle v-else class="h-4 w-4" aria-hidden="true" />
               </span>
-              <span class="text-text">Depth scale (belum terverifikasi)</span>
+              <span class="text-text">Depth scale aktif</span>
             </div>
             <div v-if="prerequisitesValue.missing.length > 0" class="mt-2 text-sm text-negative">
               <span class="font-medium">Kurang: </span>{{ prerequisitesValue.missing.join(', ') }}
@@ -322,11 +329,11 @@
               aria-describedby="source-type-help"
             >
               <option value="upload">Upload Gambar</option>
-              <option value="rtsp_frame" disabled>Frame RTSP (belum terintegrasi di dashboard)</option>
-              <option value="latest_rtsp" disabled>Frame Terbaru RTSP (belum terintegrasi di dashboard)</option>
+              <option value="rtsp_frame">Frame RTSP (tangkap saat eksekusi)</option>
+              <option value="latest_rtsp">Frame Terbaru RTSP (snapshot tersimpan)</option>
             </select>
             <p id="source-type-help" class="text-xs text-text-muted">
-              Backend mendukung RTSP, namun alur tangkapan dan prediksi RTSP belum terintegrasi di dashboard ini.
+              Upload: kirim file gambar. rtsp_frame: ambil frame baru saat job dieksekusi. latest_rtsp: pakai snapshot tersimpan terbaru (harus segar).
             </p>
           </div>
 
@@ -345,6 +352,23 @@
               Gambar terpilih: {{ uploadedImage.name }} ({{ formatBytes(uploadedImage.size) }})
             </p>
             <p id="pred-image-help" class="text-xs text-text-muted">Format gambar: JPEG, PNG. Maksimal 10 MB.</p>
+          </div>
+
+          <div v-if="predForm.source_type !== 'upload'" class="space-y-2">
+            <Label for="pred-max-frame-age">Maksimal Usia Frame (detik)</Label>
+            <Input 
+              id="pred-max-frame-age" 
+              v-model="predForm.max_frame_age_sec" 
+              type="number" 
+              min="1" 
+              max="300" 
+              :disabled="submitting"
+              class="input"
+              aria-describedby="max-frame-age-help"
+            />
+            <p id="max-frame-age-help" class="text-xs text-text-muted">
+              Batas usia snapshot untuk latest_rtsp (dicek saat submit dan eksekusi). Default: 30 detik.
+            </p>
           </div>
 
           <div class="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
@@ -582,7 +606,9 @@ import {
   getOutputPath, 
   checkPredictionPrerequisites 
 } from '@/services/predictions'
-import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate, PredictionPrerequisites } from '@/types'
+import { getLatestSnapshot, isSnapshotFresh } from '@/services/snapshots'
+import { normalizeApiError } from '@/services/api'
+import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate, PredictionPrerequisites, SnapshotResponse } from '@/types'
 
 // UI Components
 import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
@@ -628,6 +654,7 @@ const predForm = ref({
   seg_conf: 0.25,
   volume_cell_m: 0.05,
   volume_min_pts_per_cell: 2,
+  max_frame_age_sec: 30,
   return_outputs: [] as string[],
 })
 
@@ -669,7 +696,7 @@ const prerequisitesValue = computed(() => prerequisites.value)
 
 const prerequisitesModalClass = computed(() => {
   if (!prerequisites.value) return ''
-  if (prerequisites.value.has_active_calibration && prerequisites.value.has_active_ground_model) {
+  if (prerequisites.value.has_active_calibration && prerequisites.value.has_active_ground_model && prerequisites.value.has_active_depth_scale) {
     return 'border-positive-border bg-positive-bg/30'
   }
   return 'border-warning-border bg-warning-bg/30'
@@ -677,9 +704,23 @@ const prerequisitesModalClass = computed(() => {
 
 const canSubmit = computed(() => {
   if (!selectedCameraId.value || !prerequisites.value || prerequisitesError.value) return false
-  if (predForm.value.source_type !== 'upload') return false
-  if (!uploadedImage.value) return false
-  return prerequisites.value.has_active_calibration && prerequisites.value.has_active_ground_model
+
+  const pre = prerequisites.value
+  if (!pre.has_active_calibration || !pre.has_active_ground_model || !pre.has_active_depth_scale) {
+    return false
+  }
+
+  if (predForm.value.source_type === 'upload') {
+    return !!uploadedImage.value
+  }
+
+  // For RTSP sources, we need the camera to have RTSP configured and stream enabled
+  const camera = selectedCamera.value
+  if (!camera?.rtsp_configured || !camera?.stream_enabled) {
+    return false
+  }
+
+  return true
 })
 
 function errorMessage(error: unknown): string {
@@ -831,6 +872,7 @@ const openCreateModal = async () => {
     seg_conf: 0.25,
     volume_cell_m: 0.05,
     volume_min_pts_per_cell: 2,
+    max_frame_age_sec: 30,
     return_outputs: ['mask', 'overlay', 'bev_image', 'bev_overlay', 'instances_json'],
   }
   uploadedImage.value = null
@@ -842,19 +884,10 @@ const openCreateModal = async () => {
 async function submitPrediction() {
   if (!selectedCameraId.value || submitting.value) return
 
-  if (predForm.value.source_type !== 'upload') {
-    toast.warning('Hanya tipe sumber Upload Gambar yang didukung saat ini')
-    return
-  }
-  if (!uploadedImage.value) {
-    toast.warning('Pilih gambar untuk diunggah')
-    return
-  }
-
   const pre = prerequisites.value
   if (!pre || prerequisitesError.value) {
     toast.error('Prasyarat belum dapat diverifikasi', {
-      description: 'Periksa kembali kalibrasi dan model ground sebelum menjalankan prediksi.',
+      description: 'Periksa kembali kalibrasi, model ground, dan depth scale sebelum menjalankan prediksi.',
     })
     return
   }
@@ -870,40 +903,109 @@ async function submitPrediction() {
     })
     return
   }
+  if (!pre.has_active_depth_scale) {
+    toast.error('Tidak bisa menjalankan prediksi', {
+      description: 'Kamera belum memiliki depth scale aktif. Hubungi operator backend untuk menyediakan depth scale.',
+    })
+    return
+  }
+
+  // For RTSP sources, verify camera has RTSP configured and stream enabled
+  if (predForm.value.source_type !== 'upload') {
+    const camera = selectedCamera.value
+    if (!camera?.rtsp_configured) {
+      toast.error('RTSP tidak dikonfigurasi', {
+        description: 'Kamera belum memiliki URL RTSP. Atur di Manajemen Kamera.',
+      })
+      return
+    }
+    if (!camera?.stream_enabled) {
+      toast.error('Stream tidak aktif', {
+        description: 'Aktifkan stream kamera terlebih dahulu.',
+      })
+      return
+    }
+
+    // For latest_rtsp, verify there's a fresh snapshot
+    if (predForm.value.source_type === 'latest_rtsp') {
+      try {
+        const snapshot = await getLatestSnapshot(selectedCameraId.value, { max_frame_age_sec: predForm.value.max_frame_age_sec })
+        if (!isSnapshotFresh(snapshot, predForm.value.max_frame_age_sec)) {
+          toast.error('Snapshot tidak segar', {
+            description: `Snapshot terakhir lebih dari ${predForm.value.max_frame_age_sec} detik yang lalu. Ambil snapshot baru atau gunakan rtsp_frame.`,
+          })
+          return
+        }
+      } catch (error) {
+        const err = normalizeApiError(error)
+        if (err.code === 'snapshot_not_found' || err.code === 'snapshot_stale' || err.code === 'snapshot_requires_enabled_stream') {
+          toast.error('Snapshot tidak tersedia', {
+            description: err.message,
+          })
+          return
+        }
+        throw error
+      }
+    }
+  }
+
+  if (predForm.value.source_type === 'upload' && !uploadedImage.value) {
+    toast.warning('Pilih gambar untuk diunggah')
+    return
+  }
 
   const segConf = Number(predForm.value.seg_conf)
   const cellSize = Number(predForm.value.volume_cell_m)
   const minPoints = Number(predForm.value.volume_min_pts_per_cell)
-  if (!Number.isFinite(segConf) || !Number.isFinite(cellSize) || !Number.isFinite(minPoints)) {
-    submitError.value = 'Isi confidence, cell size, dan minimal titik per sel dengan angka yang valid.'
+  const maxFrameAge = Number(predForm.value.max_frame_age_sec)
+  if (!Number.isFinite(segConf) || !Number.isFinite(cellSize) || !Number.isFinite(minPoints) || !Number.isFinite(maxFrameAge)) {
+    submitError.value = 'Isi confidence, cell size, minimal titik per sel, dan maksimal usia frame dengan angka yang valid.'
     return
   }
 
   submitting.value = true
   submitError.value = ''
   try {
-    const result = await apiSubmitPrediction(selectedCameraId.value, {
+    const payload: {
+      source_type: 'upload' | 'rtsp_frame' | 'latest_rtsp'
+      seg_conf: number
+      volume_cell_m: number
+      volume_min_pts_per_cell: number
+      max_frame_age_sec: number
+      return_outputs: string[]
+      file?: File
+      timestamp?: string
+    } = {
       source_type: predForm.value.source_type,
       seg_conf: segConf,
       volume_cell_m: cellSize,
       volume_min_pts_per_cell: minPoints,
-      return_outputs: predForm.value.return_outputs.length > 0 ? predForm.value.return_outputs : undefined,
-      file: uploadedImage.value,
-    })
+      max_frame_age_sec: maxFrameAge,
+      return_outputs: predForm.value.return_outputs.length > 0 ? predForm.value.return_outputs : [],
+    }
+
+    // Only add file and timestamp for upload source
+    if (predForm.value.source_type === 'upload' && uploadedImage.value) {
+      payload.file = uploadedImage.value
+      payload.timestamp = new Date().toISOString()
+    }
+
+    const result = await apiSubmitPrediction(selectedCameraId.value, payload)
     if (!isActive()) return
 
     toast.success('Prediksi berhasil dikirim', {
       description: `Job ID: ${result.job_id}`,
     })
     isCreateModalOpen.value = false
+    uploadedImage.value = null
     await fetchPredictionJobs(1)
     startPolling(selectedCameraId.value, result.job_id)
   } catch (error: unknown) {
     if (!isActive()) return
-    const err = error as { response?: { data?: { detail?: string } }; message?: string }
-    submitError.value = err.response?.data?.detail || err.message || 'Gagal menjalankan prediksi'
+    const err = normalizeApiError(error)
+    submitError.value = err.message
     toast.error('Gagal menjalankan prediksi', {
-      description: err.response?.data?.detail || err.message,
+      description: err.message,
     })
   } finally {
     submitting.value = false

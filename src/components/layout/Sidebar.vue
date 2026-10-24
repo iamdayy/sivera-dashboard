@@ -83,7 +83,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApiStore } from '@/stores/api'
-import { LayoutDashboard, Video, Settings, GitCompare, MapPin, Brain, X } from '@lucide/vue'
+import { LayoutDashboard, Video, Settings, GitCompare, MapPin, Brain, X, Scale } from '@lucide/vue'
 import type { Component } from 'vue'
 
 interface NavItem {
@@ -110,6 +110,7 @@ const navItems: NavItem[] = [
   { path: '/dashboard/cameras', label: 'Kamera', icon: Video },
   { path: '/dashboard/calibrations', label: 'Kalibrasi', icon: GitCompare },
   { path: '/dashboard/ground-references', label: 'Referensi Tanah', icon: MapPin },
+  { path: '/dashboard/depth-scales', label: 'Skala Kedalaman', icon: Scale },
   { path: '/dashboard/predictions', label: 'Analisis Sampah', icon: Brain },
   { path: '/dashboard/settings', label: 'Pengaturan', icon: Settings },
 ]

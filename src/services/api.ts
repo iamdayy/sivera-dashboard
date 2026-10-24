@@ -162,7 +162,27 @@ const codeMessages: Record<string, string> = {
   snapshot_requires_enabled_stream: 'Aktifkan stream sebelum mengambil atau memakai snapshot.',
   prediction_requires_calibration: 'Buat dan aktifkan kalibrasi kamera terlebih dahulu.',
   prediction_requires_ground_model: 'Buat referensi tanah dan model ground yang sesuai kalibrasi aktif.',
-  prediction_requires_depth_scale: 'Depth scale belum tersedia. Hubungi operator backend.',
+  prediction_requires_depth_scale: 'Skala kedalaman belum tersedia. Buat dan aktifkan di Skala Kedalaman.',
+  depth_scale_prerequisites_changed: 'Konfigurasi aktif berubah. Muat ulang kalibrasi dan referensi tanah; unggah ulang gambar bila model ground berubah.',
+  depth_scale_invalid_saved_fit: 'Fit tersimpan tidak layak diaktifkan. Buat skala baru dengan pengukuran yang benar.',
+  depth_scale_poor_fit: 'Fit ditolak karena residual terlalu besar. Periksa titik dan pengukuran kedalaman Z.',
+  depth_scale_degenerate_fit: 'Fit tidak dapat dihitung. Gunakan pixel berbeda dengan kedalaman yang bervariasi.',
+  depth_scale_pixel_out_of_bounds: 'Titik pengukuran berada di luar preview gambar.',
+  depth_scale_invalid_depth: 'Model menghasilkan depth yang tidak valid. Periksa gambar atau model bersama operator.',
+  depth_scale_image_not_registered: 'Gambar tidak terdaftar untuk konteks ini. Unggah ulang gambar pengukuran.',
+  depth_scale_image_not_found: 'Gambar pengukuran tidak ditemukan. Unggah ulang gambar.',
+  depth_scale_invalid_image_key: 'Key gambar tidak valid. Gunakan hasil upload gambar pengukuran.',
+  depth_scale_busy: 'Backend sedang menghitung skala lain. Tunggu, lalu periksa hasil sebelum mencoba lagi.',
+  depth_scale_timeout: 'Batas waktu inferensi backend tercapai. Periksa hasil sebelum mencoba lagi.',
+  depth_scale_storage_unavailable: 'Penyimpanan gambar backend tidak tersedia. Hubungi operator dan periksa hasil sebelum mencoba lagi.',
+  depth_scale_image_unavailable: 'Backend tidak dapat menyiapkan preview gambar. Periksa kalibrasi bersama operator.',
+  depth_scale_inference_unavailable: 'Inferensi depth tidak tersedia. Periksa model bersama operator.',
+  depth_scale_computation_unavailable: 'Perhitungan skala tidak tersedia. Periksa backend bersama operator.',
+  depth_scale_persistence_unavailable: 'Backend gagal menyimpan hasil. Periksa daftar dan skala aktif sebelum mencoba lagi.',
+  depth_model_unavailable: 'File model depth belum tersedia di backend. Hubungi operator.',
+  depth_model_invalid_name: 'Gunakan nama file model .pt yang terpasang di backend, tanpa path atau URL.',
+  prediction_resolution_mismatch: 'Dimensi gambar harus tepat sesuai kalibrasi (atau dimensi kamera untuk kalibrasi legacy).',
+  prediction_invalid_image: 'Berkas bukan gambar JPEG, PNG, atau BMP yang dapat dibaca backend.',
   capture_requires_enabled_stream: 'Aktifkan stream sebelum memulai capture kalibrasi.',
   camera_not_found: 'Kamera tidak ditemukan atau sudah dihapus.',
   calibration_invalid_image: 'Berkas kalibrasi bukan gambar yang didukung.',
@@ -190,7 +210,7 @@ export function apiErrorFromResponse(status: number, data: unknown): ApiError {
   if (status === 401) message = 'API Key tidak valid atau tidak aktif. Atur kembali di Pengaturan.'
   else if (status === 403) message = 'API Key tidak memiliki izin untuk operasi ini.'
   else if (status === 404 && !code) message = 'Data tidak ditemukan atau sudah dihapus.'
-  else if (status >= 500) message = `Server API mengalami kesalahan (HTTP ${status}). Coba lagi beberapa saat lagi.`
+  else if (status >= 500 && !(code && codeMessages[code])) message = `Server API mengalami kesalahan (HTTP ${status}). Coba lagi beberapa saat lagi.`
   else if (status === 422) message = `Data yang dikirim tidak valid${message ? `: ${message}` : '.'}`
   return {
     status,

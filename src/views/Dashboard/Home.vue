@@ -153,14 +153,16 @@
                 </li>
 
                 <li class="flex flex-col gap-2 rounded-md border border-sheet-border p-3 sm:flex-row sm:items-center">
-                  <HelpCircle class="h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+                  <Scale class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
                   <div class="min-w-0 flex-1">
-                    <p class="font-medium text-text">Depth scale</p>
+                    <p class="font-medium text-text">Skala kedalaman</p>
                     <p class="text-sm text-text-muted">
-                      Kesiapan depth scale tidak dapat diperiksa lewat API publik. Backend akan menolak prediksi bila depth scale belum tersedia.
+                      Kesiapan skala kedalaman dapat diperiksa melalui API.
                     </p>
                   </div>
-                  <span class="badge badge-warning shrink-0">Belum terverifikasi</span>
+                  <RouterLink :to="{ path: '/dashboard/depth-scales', query: { camera: selectedCamera.id } }" class="btn btn-ghost btn-sm min-h-11 shrink-0">
+                    Kelola
+                  </RouterLink>
                 </li>
               </ul>
 
@@ -365,7 +367,7 @@ import type { PredictionPrerequisites } from '@/services/predictions'
 import VolumeChart from '@/components/dashboard/VolumeChart.vue'
 import Button from '@/components/ui/Button.vue'
 import { RouterLink } from 'vue-router'
-import { AlertCircle, Brain, CheckCircle, GitCompare, HelpCircle, MapPin, Video, XCircle } from '@lucide/vue'
+import { AlertCircle, Brain, CheckCircle, GitCompare, HelpCircle, MapPin, Scale, Video, XCircle } from '@lucide/vue'
 
 interface ChartPoint {
   jobId: string

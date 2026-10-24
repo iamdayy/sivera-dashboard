@@ -224,8 +224,7 @@
                 <li>Kalibrasi kamera aktif dengan parameter intrinsik terverifikasi.</li>
                 <li>Referensi tanah aktif dengan minimal empat pasangan titik gambar dan dunia.</li>
                 <li>
-                  Depth scale yang tersedia. Kesiapan depth scale belum dapat diperiksa lewat endpoint
-                  publik, jadi dashboard menandainya sebagai belum terverifikasi.
+                  Skala kedalaman yang tersedia dan dapat diperiksa melalui API.
                 </li>
               </ul>
             </section>
