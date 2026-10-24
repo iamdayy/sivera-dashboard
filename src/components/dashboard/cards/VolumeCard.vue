@@ -18,11 +18,11 @@
           <p class="text-xs text-gray-500">Footprint (m²)</p>
         </div>
         <div class="text-center">
-          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.height_mean_m?.toFixed(2) ?? '—' }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.height_mean_m?.toFixed(2) ?? '-' }}</p>
           <p class="text-xs text-gray-500">Tinggi Rata (m)</p>
         </div>
         <div class="text-center">
-          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.n_cells ?? '—' }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ volumeEstimate.n_cells ?? '-' }}</p>
           <p class="text-xs text-gray-500">Grid Cells</p>
         </div>
       </div>

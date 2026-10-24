@@ -1,299 +1,524 @@
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900">Prediksi Volume Sampah</h1>
-      <Button @click="openCreateModal" variant="primary" :disabled="!selectedCameraId">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <h1 class="text-2xl font-bold text-text">Analisis Sampah</h1>
+      <Button 
+        variant="primary" 
+        :disabled="!selectedCameraId || !hasApiKey" 
+        @click="openCreateModal"
+      >
+        <Brain class="w-4 h-4" aria-hidden="true" />
         Jalankan Prediksi Baru
       </Button>
     </div>
 
-    <!-- Camera Selector -->
-    <Card class="p-4">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Camera</label>
-      <select v-model="selectedCameraId" @change="onCameraChange"
-        class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
-        <option value="">-- Pilih Camera --</option>
-        <option v-for="cam in cameras" :key="cam.id" :value="cam.id">
-          {{ cam.name }} ({{ cam.resolution_w }}x{{ cam.resolution_h }})
-        </option>
-      </select>
-      <p v-if="selectedCameraId" class="mt-2 text-sm text-gray-500">
-        Menampilkan prediksi untuk camera terpilih
-      </p>
-    </Card>
-
-    <!-- Prediction Jobs List -->
-    <Card>
-      <div class="overflow-x-auto">
-        <table class="w-full">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job ID</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sumber</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model Segmen</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dibuat</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selesai</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="job in predictionJobs" :key="job.id" class="hover:bg-gray-50">
-              <td class="px-4 py-4 font-mono text-sm text-gray-900">
-                {{ job.id.substring(0, 8) }}...
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-900">
-                <span :class="getSourceTypeClass(job.source_type)">
-                  {{ formatSourceType(job.source_type) }}
-                </span>
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ job.seg_model || 'default' }}
-              </td>
-              <td class="px-4 py-4">
-                <span :class="getStatusClass(displayStatus(job))"
-                  class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full">
-                  <span v-if="isPolling(job.camera_id, job.id)" class="animate-spin">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  </span>
-                  {{ formatStatus(displayStatus(job)) }}
-                </span>
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ formatDate(job.created_at) }}
-              </td>
-              <td class="px-4 py-4 text-sm text-gray-500">
-                {{ job.completed_at ? formatDate(job.completed_at) : '-' }}
-              </td>
-              <td class="px-4 py-4">
-                <div class="flex space-x-2">
-                  <Button variant="ghost" size="sm" @click="viewJobDetails(job.id)"
-                    :disabled="job.status === 'processing'">
-                    Detail
-                  </Button>
-                  <Button variant="ghost" size="sm" @click="deleteJob(job.id)"
-                    class="text-destructive hover:text-destructive/80">
-                    Hapus
-                  </Button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!predictionJobs.length && selectedCameraId">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                Belum ada job prediksi untuk camera ini. Klik "Jalankan Prediksi Baru" untuk memulai.
-              </td>
-            </tr>
-            <tr v-if="!selectedCameraId">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                Pilih camera terlebih dahulu untuk melihat job prediksinya.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
-
-    <!-- Create Prediction Modal -->
-    <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeCreateModal" />
-      <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-        <h2 class="text-lg font-semibold mb-4">Jalankan Prediksi Baru</h2>
-
-        <!-- Prerequisites Status -->
-        <div v-if="prerequisitesValue" class="mb-4 p-4 rounded-lg" :class="prerequisitesValue.has_active_calibration && prerequisitesValue.has_active_ground_model ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'">
-          <h3 class="text-sm font-medium text-gray-900 mb-2">Prasyarat Prediksi</h3>
-          <div v-if="checkingPrerequisites" class="text-sm text-gray-500">Memeriksa prasyarat...</div>
-          <template v-else>
-            <div class="space-y-1 text-sm">
-              <div class="flex items-center gap-2">
-                <span :class="prerequisitesValue.has_active_calibration ? 'text-green-600' : 'text-red-600'">
-                  {{ prerequisitesValue.has_active_calibration ? '✓' : '✗' }}
-                </span>
-                <span class="text-gray-700">Kalibrasi aktif</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span :class="prerequisitesValue.has_active_ground_model ? 'text-green-600' : 'text-red-600'">
-                  {{ prerequisitesValue.has_active_ground_model ? '✓' : '✗' }}
-                </span>
-                <span class="text-gray-700">Model ground aktif</span>
-              </div>
-              <div v-if="prerequisitesValue.missing.length > 0" class="mt-2 text-sm text-red-600">
-                <span class="font-medium">Kurang: </span>{{ prerequisitesValue.missing.join(', ') }}
-              </div>
-            </div>
-          </template>
+    <div v-if="!hasApiKey" class="card border-warning-border bg-warning-bg/50">
+      <div class="flex items-start gap-3">
+        <AlertCircle class="w-5 h-5 text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div class="flex-1">
+          <p class="font-medium text-text">API Key belum diatur</p>
+          <p class="text-sm text-text-muted mt-1">
+            Atur akses API sebelum menjalankan prediksi.
+            <RouterLink to="/dashboard/settings" class="text-brand underline ml-1">Buka Pengaturan</RouterLink>
+          </p>
         </div>
-
-        <form @submit.prevent="submitPrediction">
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Tipe Sumber</label>
-              <select v-model="predForm.source_type"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="upload">Upload Gambar</option>
-                <option value="rtsp_frame" disabled>Ambil Frame dari RTSP (belum didukung)</option>
-                <option value="latest_rtsp" disabled>Ambil Frame Terbaru dari RTSP (belum didukung)</option>
-              </select>
-              <p v-if="predForm.source_type !== 'upload'" class="mt-1 text-xs text-amber-600">
-                Backend belum mengimplementasikan sumber RTSP. Gunakan Upload Gambar.
-              </p>
-            </div>
-
-            <div v-if="predForm.source_type === 'upload'">
-              <label class="block text-sm font-medium text-gray-700 mb-1">Upload Gambar</label>
-              <input type="file" accept="image/*" @change="handleImageUpload" class="w-full text-sm" />
-              <p v-if="uploadedImage" class="mt-1 text-sm text-green-600">
-                Gambar terpilih: {{ uploadedImage.name }} ({{ formatBytes(uploadedImage.size) }})
-              </p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Confidence Threshold</label>
-                <input v-model="predForm.seg_conf" type="number" step="0.01" min="0" max="1"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Cell Size (meter)</label>
-                <input v-model="predForm.volume_cell_m" type="number" step="0.01" min="0.01" max="1"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Min Points per Cell</label>
-              <input v-model="predForm.volume_min_pts_per_cell" type="number" min="1" max="10"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Output yang Dikembalikan</label>
-              <div class="flex flex-wrap gap-2">
-                <label class="inline-flex items-center">
-                  <input type="checkbox" value="segmentation" v-model="predForm.return_outputs" class="mr-2" />
-                  Segmentation Mask
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="checkbox" value="depth" v-model="predForm.return_outputs" class="mr-2" />
-                  Depth Map
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="checkbox" value="bev" v-model="predForm.return_outputs" class="mr-2" />
-                  BEV
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="checkbox" value="volume" v-model="predForm.return_outputs" class="mr-2" />
-                  Volume Grid
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="checkbox" value="instances" v-model="predForm.return_outputs" class="mr-2" />
-                  Instances
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-6 flex justify-end space-x-3">
-            <Button variant="secondary" @click="closeCreateModal">Batal</Button>
-            <Button type="submit" variant="primary" :isLoading="submitting">
-              {{ submitting ? 'Memproses...' : 'Jalankan Prediksi' }}
-            </Button>
-          </div>
-        </form>
       </div>
     </div>
 
-    <!-- Job Detail Modal with Gallery -->
-    <div v-if="selectedJob" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="closeJobDetail" />
-      <div class="relative bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold">Detail Job Prediksi</h2>
-          <Button variant="ghost" @click="closeJobDetail">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </Button>
+    <!-- Camera Selector -->
+    <div v-else class="card">
+      <Label for="prediction-camera" class="label">Pilih Kamera</Label>
+      <select
+        id="prediction-camera"
+        v-model="selectedCameraId"
+        @change="onCameraChange"
+        :disabled="!hasApiKey || cameraLoading || !cameras.length"
+        class="input w-full md:w-64"
+        aria-describedby="prediction-camera-help"
+      >
+        <option value="" disabled>Pilih kamera</option>
+        <option v-for="cam in cameras" :key="cam.id" :value="cam.id">
+          {{ cam.name }} ({{ cam.resolution_w }}×{{ cam.resolution_h }})
+        </option>
+      </select>
+      <p id="prediction-camera-help" class="text-sm text-text-muted mt-1" v-if="selectedCameraId">
+        Menampilkan prediksi untuk {{ selectedCamera?.name }}
+      </p>
+      <div v-if="cameraLoading" class="loading-state mt-2" role="status">
+        <div class="spinner" aria-hidden="true" />
+        Memuat data kamera...
+      </div>
+      <p v-else-if="hasApiKey && !cameras.length" class="text-sm text-text-muted mt-2">
+        Belum ada kamera terdaftar.
+        <RouterLink to="/dashboard/cameras" class="text-brand underline ml-1">Buka Manajemen Kamera</RouterLink>
+      </p>
+    </div>
+
+    <!-- Prerequisites Panel -->
+    <div v-if="selectedCameraId" class="card">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-text">Prasyarat prediksi</h2>
+          <p class="mt-1 text-sm text-text-muted">
+            Prediksi memerlukan kalibrasi aktif dan model ground aktif. Depth scale belum dapat diverifikasi lewat API publik.
+          </p>
+        </div>
+        <div v-if="checkingPrerequisites" class="flex shrink-0 items-center gap-2 text-sm text-text-muted" role="status">
+          <div class="spinner" aria-hidden="true" />
+          Memeriksa...
+        </div>
+      </div>
+
+      <div v-if="prerequisitesError" class="mt-4 rounded-lg border border-negative-border bg-negative-bg/40 p-3" role="alert">
+        <p class="text-sm text-negative">Gagal memeriksa prasyarat: {{ prerequisitesError }}</p>
+        <Button type="button" variant="outline" class="mt-2" @click="checkPrerequisites">Coba Lagi</Button>
+      </div>
+
+      <div v-else-if="!prerequisites" class="loading-state mt-4" role="status">
+        <div class="spinner" aria-hidden="true" />
+        Memeriksa prasyarat...
+      </div>
+
+      <div v-else class="mt-4 grid gap-3 sm:grid-cols-3">
+        <div class="rounded-lg border border-sheet-border bg-sheet p-4">
+          <div class="flex items-center gap-2">
+            <CheckCircle v-if="prerequisites.has_active_calibration" class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+            <XCircle v-else class="h-5 w-5 shrink-0 text-negative" aria-hidden="true" />
+            <p class="font-medium text-text">Kalibrasi aktif</p>
+          </div>
+          <p class="mt-2 text-sm text-text-muted">
+            {{ prerequisites.has_active_calibration ? 'Parameter intrinsik tersedia.' : 'Belum ada kalibrasi aktif.' }}
+          </p>
+          <Badge :class="prerequisites.has_active_calibration ? 'badge-positive' : 'badge-negative'" class="mt-2">
+            {{ prerequisites.has_active_calibration ? 'Tersedia' : 'Tidak tersedia' }}
+          </Badge>
+          <RouterLink
+            :to="{ path: '/dashboard/calibrations', query: { camera: selectedCameraId } }"
+            class="btn btn-ghost btn-sm mt-3 min-h-11 w-full justify-center"
+          >
+            Kelola kalibrasi
+          </RouterLink>
+        </div>
+
+        <div class="rounded-lg border border-sheet-border bg-sheet p-4">
+          <div class="flex items-center gap-2">
+            <CheckCircle v-if="prerequisites.has_active_ground_model" class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+            <XCircle v-else class="h-5 w-5 shrink-0 text-negative" aria-hidden="true" />
+            <p class="font-medium text-text">Model ground aktif</p>
+          </div>
+          <p class="mt-2 text-sm text-text-muted">
+            {{ prerequisites.has_active_ground_model ? 'Referensi tanah aktif untuk mengangkat titik ke bidang tanah.' : 'Belum ada model ground aktif.' }}
+          </p>
+          <Badge :class="prerequisites.has_active_ground_model ? 'badge-positive' : 'badge-negative'" class="mt-2">
+            {{ prerequisites.has_active_ground_model ? 'Tersedia' : 'Tidak tersedia' }}
+          </Badge>
+          <RouterLink
+            :to="{ path: '/dashboard/ground-references', query: { camera: selectedCameraId } }"
+            class="btn btn-ghost btn-sm mt-3 min-h-11 w-full justify-center"
+          >
+            Kelola referensi tanah
+          </RouterLink>
+        </div>
+
+        <div class="rounded-lg border border-sheet-border bg-sheet p-4">
+          <div class="flex items-center gap-2">
+            <HelpCircle class="h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+            <p class="font-medium text-text">Depth scale</p>
+          </div>
+          <p class="mt-2 text-sm text-text-muted">
+            Tidak ada endpoint publik untuk memverifikasi kesiapan depth scale. Backend akan menolak prediksi bila komponen ini belum tersedia.
+          </p>
+          <Badge class="badge-warning mt-2">Belum terverifikasi</Badge>
+        </div>
+      </div>
+
+      <div v-if="prerequisites && prerequisites.missing.length > 0" class="mt-4 rounded-lg border border-negative-border bg-negative-bg/50 p-3">
+        <p class="text-sm font-medium text-negative">Komponen yang hilang: {{ prerequisites.missing.join(', ') }}</p>
+      </div>
+    </div>
+
+    <!-- Prediction Jobs List -->
+    <div v-if="selectedCameraId" class="card overflow-hidden">
+      <div class="flex flex-col gap-2 border-b border-sheet-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-text">Riwayat prediksi</h2>
+          <p class="text-sm text-text-muted">
+            {{ predictionJobs.length }} dari {{ jobsTotal }} job untuk {{ selectedCamera?.name }}.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          class="min-h-11 shrink-0"
+          :disabled="loading"
+          aria-label="Muat ulang riwayat prediksi"
+          @click="fetchPredictionJobs(1)"
+        >
+          <RefreshCw class="h-4 w-4" aria-hidden="true" />
+          Muat ulang
+        </Button>
+      </div>
+
+      <div class="table-container">
+        <table class="table" aria-label="Daftar job prediksi">
+          <thead>
+            <tr>
+              <th scope="col">Job ID</th>
+              <th scope="col">Sumber</th>
+              <th scope="col">Model Segmen</th>
+              <th scope="col">Status</th>
+              <th scope="col">Dibuat</th>
+              <th scope="col">Selesai</th>
+              <th scope="col">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading && predictionJobs.length === 0">
+              <td colspan="7">
+                <div class="loading-state" role="status">
+                  <div class="spinner" aria-hidden="true" />
+                  Memuat job prediksi...
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="loadError">
+              <td colspan="7">
+                <div class="error-state" role="alert">
+                  <AlertCircle class="h-5 w-5" aria-hidden="true" />
+                  <p class="font-medium text-text">Gagal memuat job prediksi</p>
+                  <p class="text-sm text-text-muted">{{ loadError }}</p>
+                  <Button type="button" variant="outline" class="btn-sm mt-2" @click="fetchPredictionJobs(1)">Coba Lagi</Button>
+                </div>
+              </td>
+            </tr>
+            <template v-else>
+              <tr v-for="job in predictionJobs" :key="job.id" class="hover:bg-frame">
+                <td class="font-mono text-sm">{{ job.id.substring(0, 8) }}…</td>
+                <td>
+                  <Badge :class="getSourceTypeBadgeClass(job.source_type)">
+                    {{ formatSourceType(job.source_type) }}
+                  </Badge>
+                </td>
+                <td class="text-text-muted">{{ job.seg_model || 'default' }}</td>
+                <td>
+                  <Badge :class="getStatusBadgeClass(displayStatus(job))" class="flex items-center gap-1">
+                    <span v-if="isPolling(job.camera_id, job.id)" class="animate-spin">
+                      <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </span>
+                    {{ formatStatus(displayStatus(job)) }}
+                  </Badge>
+                </td>
+                <td class="text-text-muted">{{ formatDate(job.created_at) }}</td>
+                <td class="text-text-muted">{{ job.completed_at ? formatDate(job.completed_at) : '-' }}</td>
+                <td>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    :disabled="job.status === 'processing'"
+                    @click="viewJobDetails(job.id)"
+                  >
+                    Detail
+                  </Button>
+                </td>
+              </tr>
+              <tr v-if="!predictionJobs.length">
+                <td colspan="7" class="py-8 text-center text-text-muted">
+                  Belum ada job prediksi untuk kamera ini.
+                  <button type="button" class="font-medium text-brand underline" @click="openCreateModal">
+                    Jalankan prediksi pertama
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="jobsPage < jobsTotalPages" class="border-t border-sheet-border p-3 text-center">
+        <Button
+          type="button"
+          variant="outline"
+          class="min-h-11"
+          :disabled="loadingMoreJobs"
+          @click="loadMoreJobs"
+        >
+          <span v-if="loadingMoreJobs" class="spinner" aria-hidden="true" />
+          {{ loadingMoreJobs ? 'Memuat...' : 'Muat job berikutnya' }}
+        </Button>
+      </div>
+    </div>
+
+    <div v-else class="card empty-state py-12">
+      <Video class="empty-state-icon" aria-hidden="true" />
+      <p class="empty-state-title">Pilih kamera untuk memulai</p>
+      <p class="empty-state-description">Pilih kamera dari dropdown di atas untuk melihat daftar job prediksi dan menjalankan analisis baru.</p>
+    </div>
+
+    <!-- Create Prediction Modal -->
+    <Dialog
+      v-model:open="isCreateModalOpen"
+      :show-close-button="!submitting"
+      :disabled="submitting"
+      content-class="max-w-2xl"
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Jalankan Prediksi Baru</DialogTitle>
+          <DialogDescription class="break-words">Konfigurasi dan jalankan prediksi volume untuk {{ selectedCamera?.name }}.</DialogDescription>
+        </DialogHeader>
+
+        <!-- Prerequisites Status in Modal -->
+        <div class="mb-4 rounded-lg border p-4" :class="prerequisitesValue ? prerequisitesModalClass : 'border-sheet-border bg-frame'">
+          <h3 class="mb-3 text-sm font-medium text-text">Prasyarat prediksi</h3>
+          <div v-if="checkingPrerequisites" class="loading-state" role="status">
+            <div class="spinner" aria-hidden="true" />
+            Memeriksa prasyarat...
+          </div>
+          <div v-else-if="prerequisitesError" role="alert">
+            <p class="text-sm text-negative">Gagal memeriksa prasyarat: {{ prerequisitesError }}</p>
+            <Button type="button" variant="outline" class="mt-2" @click="checkPrerequisites">Coba Lagi</Button>
+          </div>
+          <div v-else-if="prerequisitesValue" class="space-y-2 text-sm">
+            <div class="flex items-center gap-2">
+              <span class="shrink-0" :class="prerequisitesValue.has_active_calibration ? 'text-positive' : 'text-negative'">
+                <CheckCircle v-if="prerequisitesValue.has_active_calibration" class="h-4 w-4" aria-hidden="true" />
+                <XCircle v-else class="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span class="text-text">Kalibrasi aktif</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="shrink-0" :class="prerequisitesValue.has_active_ground_model ? 'text-positive' : 'text-negative'">
+                <CheckCircle v-if="prerequisitesValue.has_active_ground_model" class="h-4 w-4" aria-hidden="true" />
+                <XCircle v-else class="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span class="text-text">Model ground aktif</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="shrink-0 text-warning">
+                <HelpCircle class="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span class="text-text">Depth scale (belum terverifikasi)</span>
+            </div>
+            <div v-if="prerequisitesValue.missing.length > 0" class="mt-2 text-sm text-negative">
+              <span class="font-medium">Kurang: </span>{{ prerequisitesValue.missing.join(', ') }}
+            </div>
+          </div>
+          <p v-else class="text-sm text-text-muted">Prasyarat belum diperiksa.</p>
+        </div>
+
+        <form @submit.prevent="submitPrediction" class="space-y-4">
+          <div class="space-y-2">
+            <Label for="pred-source-type">Tipe Sumber</Label>
+            <select
+              id="pred-source-type"
+              v-model="predForm.source_type"
+              :disabled="submitting"
+              class="input"
+              aria-describedby="source-type-help"
+            >
+              <option value="upload">Upload Gambar</option>
+              <option value="rtsp_frame" disabled>Frame RTSP (belum terintegrasi di dashboard)</option>
+              <option value="latest_rtsp" disabled>Frame Terbaru RTSP (belum terintegrasi di dashboard)</option>
+            </select>
+            <p id="source-type-help" class="text-xs text-text-muted">
+              Backend mendukung RTSP, namun alur tangkapan dan prediksi RTSP belum terintegrasi di dashboard ini.
+            </p>
+          </div>
+
+          <div v-if="predForm.source_type === 'upload'" class="space-y-2">
+            <Label for="pred-image">Upload Gambar</Label>
+<input 
+  id="pred-image" 
+  type="file" 
+  accept="image/*" 
+  @change="handleImageUpload" 
+  :disabled="submitting"
+  class="input"
+  aria-describedby="pred-image-help"
+/>
+            <p v-if="uploadedImage" class="text-sm text-positive" role="status">
+              Gambar terpilih: {{ uploadedImage.name }} ({{ formatBytes(uploadedImage.size) }})
+            </p>
+            <p id="pred-image-help" class="text-xs text-text-muted">Format gambar: JPEG, PNG. Maksimal 10 MB.</p>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="pred-conf">Confidence Threshold</Label>
+              <Input 
+                id="pred-conf" 
+                v-model="predForm.seg_conf" 
+                type="number" 
+                step="0.01" 
+                min="0" 
+                max="1" 
+                :disabled="submitting"
+                class="input"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="pred-cell">Cell Size (meter)</Label>
+              <Input 
+                id="pred-cell" 
+                v-model="predForm.volume_cell_m" 
+                type="number" 
+                step="0.01" 
+                min="0.01" 
+                max="1" 
+                :disabled="submitting"
+                class="input"
+              />
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <Label for="pred-min-pts">Min Points per Cell</Label>
+            <Input 
+              id="pred-min-pts" 
+              v-model="predForm.volume_min_pts_per_cell" 
+              type="number" 
+              min="1" 
+              max="10000" 
+              :disabled="submitting"
+              class="input"
+            />
+          </div>
+
+          <div class="space-y-2">
+            <Label>Output yang Dikembalikan</Label>
+            <p class="text-xs text-text-muted">Pilih artefak output yang dihasilkan backend (sesuai OpenAPI contract)</p>
+            <div class="flex flex-wrap gap-3">
+              <label v-for="output in availableOutputs" :key="output.value" class="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  :value="output.value" 
+                  v-model="predForm.return_outputs" 
+                  class="h-4 w-4 rounded border-control text-brand focus:ring-brand"
+                  :disabled="submitting"
+                />
+                <span class="text-sm text-text">{{ output.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="submitError" class="error-state" role="alert">
+            <AlertCircle class="w-5 h-5" aria-hidden="true" />
+            <p class="font-medium text-text">Gagal menjalankan prediksi</p>
+            <p class="text-sm text-text-muted">{{ submitError }}</p>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="secondary" :disabled="submitting" @click="isCreateModalOpen = false">Batal</Button>
+            <Button type="submit" :disabled="submitting || !canSubmit" :aria-busy="submitting" variant="primary">
+              {{ submitting ? 'Memproses...' : 'Jalankan Prediksi' }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Job Detail Dialog -->
+    <Dialog
+      v-model:open="isJobDetailOpen"
+      :show-close-button="!loadingJobDetail"
+      :disabled="loadingJobDetail"
+      content-class="max-w-5xl"
+      @update:open="onJobDetailOpenChange"
+    >
+      <DialogHeader>
+        <DialogTitle>Detail Job Prediksi</DialogTitle>
+        <DialogDescription v-if="selectedJob">Job {{ selectedJob.id.substring(0, 8) }}… · {{ formatSourceType(selectedJob.source_type) }} · {{ formatStatus(selectedJob.status) }}</DialogDescription>
+      </DialogHeader>
+
+      <div v-if="loadingJobDetail" class="loading-state" role="status" style="height: 300px;">
+        <div class="spinner" aria-hidden="true" />
+        Memuat detail job...
+      </div>
+
+      <template v-else-if="selectedJob">
+        <div v-if="jobDetailWarnings.length > 0" class="mb-4 rounded-lg border border-warning-border bg-warning-bg/50 p-3" role="status">
+          <p class="text-sm font-medium text-warning">Sebagian detail tidak dapat dimuat</p>
+          <ul class="mt-1 list-inside list-disc text-sm text-text-muted">
+            <li v-for="warning in jobDetailWarnings" :key="warning">{{ warning }}</li>
+          </ul>
         </div>
 
         <!-- Job Metadata -->
-        <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           <div>
-            <p class="text-sm text-gray-500">Job ID</p>
-            <p class="font-mono text-sm">{{ selectedJob.id }}</p>
+            <p class="text-sm text-text-muted">Job ID</p>
+            <p class="font-mono text-sm text-text">{{ selectedJob.id }}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-500">Status</p>
-            <p><span :class="getStatusClass(selectedJob.status)"
-                class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">{{ formatStatus(selectedJob.status) }}
-              </span></p>
+            <p class="text-sm text-text-muted">Status</p>
+            <Badge :class="getStatusBadgeClass(selectedJob.status)">{{ formatStatus(selectedJob.status) }}</Badge>
           </div>
           <div>
-            <p class="text-sm text-gray-500">Sumber</p>
-            <p>{{ formatSourceType(selectedJob.source_type) }}</p>
+            <p class="text-sm text-text-muted">Sumber</p>
+            <p class="text-text">{{ formatSourceType(selectedJob.source_type) }}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-500">Model Segmen</p>
-            <p>{{ selectedJob.seg_model || 'default' }}</p>
+            <p class="text-sm text-text-muted">Model Segmen</p>
+            <p class="text-text">{{ selectedJob.seg_model || 'default' }}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-500">Confidence</p>
-            <p>{{ selectedJob.seg_conf }}</p>
+            <p class="text-sm text-text-muted">Confidence</p>
+            <p class="text-text">{{ selectedJob.seg_conf }}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-500">Dibuat</p>
-            <p>{{ formatDate(selectedJob.created_at) }}</p>
+            <p class="text-sm text-text-muted">Dibuat</p>
+            <p class="text-text">{{ formatDate(selectedJob.created_at) }}</p>
           </div>
           <div v-if="selectedJob.completed_at">
-            <p class="text-sm text-gray-500">Selesai</p>
-            <p>{{ formatDate(selectedJob.completed_at) }}</p>
+            <p class="text-sm text-text-muted">Selesai</p>
+            <p class="text-text">{{ formatDate(selectedJob.completed_at) }}</p>
           </div>
           <div v-if="selectedJob.error_msg">
-            <p class="text-sm text-gray-500">Error</p>
-            <p class="text-destructive">{{ selectedJob.error_msg }}</p>
+            <p class="text-sm text-text-muted">Error</p>
+            <p class="text-negative">{{ selectedJob.error_msg }}</p>
           </div>
         </div>
 
         <!-- Image Gallery -->
-        <div v-if="jobOutputs.length > 0" class="border-t pt-6 mb-6">
-          <h3 class="text-sm font-medium text-gray-900 mb-4">Output Gambar</h3>
+        <div v-if="jobOutputs.length > 0" class="border-t border-sheet-border pt-6 mb-6">
+          <h3 class="text-sm font-medium text-text mb-4">Output Gambar</h3>
           <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            <div v-for="output in jobOutputs" :key="output.id" class="border border-gray-200 rounded-lg overflow-hidden">
-              <div class="aspect-video bg-gray-100 relative">
-                <AuthenticatedArtifact :path="getOutputPath(selectedJob.camera_id, selectedJob.id, output.output_type)" :label="output.output_type" />
-              </div>
-              <div class="p-2 bg-gray-50">
-                <p class="text-xs font-medium text-gray-900 truncate">{{ formatOutputType(output.output_type) }}</p>
-                <p class="text-xs text-gray-500">{{ output.width }}x{{ output.height }}</p>
+            <div v-for="output in jobOutputs" :key="output.id" class="space-y-2">
+              <AuthenticatedArtifact :path="getOutputPath(selectedJob.camera_id, selectedJob.id, output.output_type)" :label="formatOutputType(output.output_type)" />
+              <div class="text-center">
+                <p class="text-xs font-medium text-text truncate">{{ formatOutputType(output.output_type) }}</p>
+                <p class="text-xs text-text-muted">{{ output.width }}×{{ output.height }}</p>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Instance Table -->
-        <div v-if="jobInstances.length > 0" class="border-t pt-6 mb-6">
-          <h3 class="text-sm font-medium text-gray-900 mb-4">Instance Terdeteksi</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
+        <div v-if="jobInstances.length > 0" class="border-t border-sheet-border pt-6 mb-6">
+          <h3 class="text-sm font-medium text-text mb-4">Instance Terdeteksi</h3>
+          <div class="table-container">
+            <table class="table" aria-label="Instance terdeteksi">
+              <thead>
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (m³)</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Footprint (m²)</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi Rata (m)</th>
+                  <th scope="col">Kelas</th>
+                  <th scope="col" class="numeric">Confidence</th>
+                  <th scope="col" class="numeric">Volume (m³)</th>
+                  <th scope="col" class="numeric">Footprint (m²)</th>
+                  <th scope="col" class="numeric">Tinggi Rata (m)</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-200">
-                <tr v-for="inst in jobInstances" :key="inst.id" class="hover:bg-gray-50">
-                  <td class="px-3 py-2 font-medium text-gray-900">{{ inst.cls_name }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ (inst.confidence * 100).toFixed(1) }}%</td>
-                  <td class="px-3 py-2 text-gray-700">{{ inst.volume_m3?.toFixed(3) ?? '—' }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ inst.footprint_m2?.toFixed(3) ?? '—' }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ inst.height_mean_m?.toFixed(3) ?? '—' }}</td>
+              <tbody>
+                <tr v-for="inst in jobInstances" :key="inst.id">
+                  <td class="font-medium text-text">{{ inst.cls_name }}</td>
+                  <td class="numeric tabular-nums">{{ (inst.confidence * 100).toFixed(1) }}%</td>
+                  <td class="numeric tabular-nums">{{ inst.volume_m3?.toFixed(3) ?? '-' }}</td>
+                  <td class="numeric tabular-nums">{{ inst.footprint_m2?.toFixed(3) ?? '-' }}</td>
+                  <td class="numeric tabular-nums">{{ inst.height_mean_m?.toFixed(3) ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -301,55 +526,72 @@
         </div>
 
         <!-- Volume Table -->
-        <div v-if="jobVolumes.length > 0" class="border-t pt-6">
-          <h3 class="text-sm font-medium text-gray-900 mb-4">Estimasi Volume</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
+        <div v-if="jobVolumes.length > 0" class="border-t border-sheet-border pt-6">
+          <h3 class="text-sm font-medium text-text mb-4">Estimasi Volume</h3>
+          <div class="table-container">
+            <table class="table" aria-label="Estimasi volume">
+              <thead>
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metode</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (m³)</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume (L)</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cell Size (m)</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grid Cells</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titik</th>
+                  <th scope="col">Metode</th>
+                  <th scope="col" class="numeric">Volume (m³)</th>
+                  <th scope="col" class="numeric">Volume (L)</th>
+                  <th scope="col" class="numeric">Cell Size (m)</th>
+                  <th scope="col" class="numeric">Grid Cells</th>
+                  <th scope="col" class="numeric">Titik</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-200">
-                <tr v-for="vol in jobVolumes" :key="vol.id" class="hover:bg-gray-50">
-                  <td class="px-3 py-2 font-medium text-gray-900">{{ vol.method }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ vol.volume_m3.toFixed(3) }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ vol.volume_liter.toFixed(0) }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ vol.cell_m?.toFixed(3) ?? '—' }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ vol.n_cells ?? '—' }}</td>
-                  <td class="px-3 py-2 text-gray-700">{{ vol.n_points ?? '—' }}</td>
+              <tbody>
+                <tr v-for="vol in jobVolumes" :key="vol.id">
+                  <td class="font-medium text-text">{{ volumeMethodLabel(vol.method) }}</td>
+                  <td class="numeric tabular-nums">{{ vol.volume_m3.toFixed(3) }}</td>
+                  <td class="numeric tabular-nums">{{ vol.volume_liter.toFixed(0) }}</td>
+                  <td class="numeric tabular-nums">{{ vol.cell_m?.toFixed(3) ?? '-' }}</td>
+                  <td class="numeric tabular-nums">{{ vol.n_cells ?? '-' }}</td>
+                  <td class="numeric tabular-nums">{{ vol.n_points ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        <div v-if="jobOutputs.length === 0 && jobInstances.length === 0 && jobVolumes.length === 0" class="text-center text-gray-500 py-8">
-          Belum ada output untuk job ini.
+        <div v-if="jobOutputs.length === 0 && jobInstances.length === 0 && jobVolumes.length === 0 && jobDetailWarnings.length === 0" class="empty-state border-t border-sheet-border py-8">
+          <Brain class="empty-state-icon" aria-hidden="true" />
+          <p class="empty-state-title">Belum ada output untuk job ini</p>
+          <p class="empty-state-description">Job mungkin masih diproses atau gagal. Cek status job di atas.</p>
         </div>
-      </div>
-    </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
-import { onMounted, ref, computed } from 'vue'
-import { listCameras as apiListCameras } from '@/services/cameras'
-import { listPredictionJobs as apiListPredictionJobs, getPredictionJob as apiGetPredictionJob, submitPrediction as apiSubmitPrediction, listPredictionOutputs as apiListPredictionOutputs, getPredictionInstances as apiGetPredictionInstances, getPredictionVolumes as apiGetPredictionVolumes, getOutputPath, checkPredictionPrerequisites } from '@/services/predictions'
-import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
 import { useConnectionScope } from '@/composables/useConnectionScope'
 import { useJobPolling } from '@/composables/useJobPolling'
+import { listCameras as apiListCameras } from '@/services/cameras'
+import { 
+  listPredictionJobs as apiListPredictionJobs, 
+  getPredictionJob as apiGetPredictionJob, 
+  submitPrediction as apiSubmitPrediction, 
+  listPredictionOutputs as apiListPredictionOutputs, 
+  getPredictionInstances as apiGetPredictionInstances, 
+  getPredictionVolumes as apiGetPredictionVolumes, 
+  getOutputPath, 
+  checkPredictionPrerequisites 
+} from '@/services/predictions'
 import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeEstimate, PredictionPrerequisites } from '@/types'
 
+// UI Components
+import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
+import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
+
+import { Brain, Video, AlertCircle, CheckCircle, XCircle, HelpCircle, RefreshCw } from '@lucide/vue'
+
+const route = useRoute()
+const router = useRouter()
 const apiStore = useApiStore()
 const toast = useToast()
 const isActive = useConnectionScope()
@@ -358,136 +600,247 @@ const cameras = ref<Camera[]>([])
 const predictionJobs = ref<PredictionJob[]>([])
 const selectedCameraId = ref('')
 const loading = ref(false)
+const loadingMoreJobs = ref(false)
+const loadError = ref('')
+const cameraLoading = ref(false)
 const submitting = ref(false)
+const submitError = ref('')
 const selectedJob = ref<PredictionJob | null>(null)
 const isCreateModalOpen = ref(false)
+const isJobDetailOpen = ref(false)
+const jobsPage = ref(1)
+const jobsTotal = ref(0)
+const jobsTotalPages = ref(1)
 
-// Job detail data
 const jobOutputs = ref<PredictionOutput[]>([])
 const jobInstances = ref<DetectedInstance[]>([])
 const jobVolumes = ref<VolumeEstimate[]>([])
+const jobDetailWarnings = ref<string[]>([])
 const loadingJobDetail = ref(false)
 
-// Job polling
+const uploadedImage = ref<File | null>(null)
+const prerequisites = ref<PredictionPrerequisites | null>(null)
+const checkingPrerequisites = ref(false)
+const prerequisitesError = ref('')
+
+const predForm = ref({
+  source_type: 'upload' as 'upload' | 'rtsp_frame' | 'latest_rtsp',
+  seg_conf: 0.25,
+  volume_cell_m: 0.05,
+  volume_min_pts_per_cell: 2,
+  return_outputs: [] as string[],
+})
+
+// Available outputs from OpenAPI contract
+const availableOutputs = [
+  { value: 'mask', label: 'Mask' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'instances_json', label: 'Instances JSON' },
+  { value: 'depth_raw_vis', label: 'Depth Raw Vis' },
+  { value: 'depth_scaled_vis', label: 'Depth Scaled Vis' },
+  { value: 'depth_masked', label: 'Depth Masked' },
+  { value: 'height_map', label: 'Height Map' },
+  { value: 'lifted_points_npz', label: 'Lifted Points NPZ' },
+  { value: 'volume_heatmap', label: 'Volume Heatmap' },
+  { value: 'volume_result_npz', label: 'Volume Result NPZ' },
+  { value: 'bev_image', label: 'BEV Image' },
+  { value: 'bev_mask_proyeksi', label: 'BEV Mask Proyeksi' },
+  { value: 'bev_overlay', label: 'BEV Overlay' },
+]
+
 const { startPolling, isPolling, getPollingStatus, stopPolling } = useJobPolling(
   apiGetPredictionJob,
   async (updatedJob) => {
     if (!isActive()) return
     toast.success('Prediksi selesai', {
-      description: `Job ${updatedJob.id.substring(0, 8)}... ${updatedJob.status === 'done' ? 'berhasil' : 'gagal'}`,
+      description: `Job ${updatedJob.id.substring(0, 8)}… ${updatedJob.status === 'done' ? 'berhasil' : 'gagal'}`,
     })
-    await fetchPredictionJobs()
+    await fetchPredictionJobs(1)
+    if (isJobDetailOpen.value && selectedJob.value?.id === updatedJob.id) {
+      await loadJobDetail(updatedJob.id, false)
+    }
   }
 )
 
-const predForm = ref({
-  source_type: 'upload',
-  seg_conf: 0.25,
-  volume_cell_m: 0.05,
-  volume_min_pts_per_cell: 2,
-  return_outputs: ['segmentation', 'bev', 'volume', 'instances'],
-})
+const hasApiKey = computed(() => apiStore.hasApiKey)
+const selectedCamera = computed(() => cameras.value.find(c => c.id === selectedCameraId.value))
 
-const uploadedImage = ref<File | null>(null)
-
-// Prediction prerequisites
-const prerequisites = ref<PredictionPrerequisites | null>(null)
-const checkingPrerequisites = ref(false)
-
-// Computed to narrow the type for template
 const prerequisitesValue = computed(() => prerequisites.value)
 
-const fetchCameras = async () => {
-  if (!apiStore.hasApiKey) return
+const prerequisitesModalClass = computed(() => {
+  if (!prerequisites.value) return ''
+  if (prerequisites.value.has_active_calibration && prerequisites.value.has_active_ground_model) {
+    return 'border-positive-border bg-positive-bg/30'
+  }
+  return 'border-warning-border bg-warning-bg/30'
+})
+
+const canSubmit = computed(() => {
+  if (!selectedCameraId.value || !prerequisites.value || prerequisitesError.value) return false
+  if (predForm.value.source_type !== 'upload') return false
+  if (!uploadedImage.value) return false
+  return prerequisites.value.has_active_calibration && prerequisites.value.has_active_ground_model
+})
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
+    return error.message
+  return 'Permintaan gagal. Coba kembali.'
+}
+
+async function loadAllCameras(): Promise<Camera[]> {
+  const first = await apiListCameras(1, 100)
+  const items = [...first.items]
+  for (let page = 2; page <= first.total_pages; page += 1) {
+    const next = await apiListCameras(page, 100)
+    items.push(...next.items)
+  }
+  return items
+}
+
+async function fetchCameras() {
+  if (!hasApiKey.value) return
+  cameraLoading.value = true
   try {
-    const response = await apiListCameras()
+    const items = await loadAllCameras()
     if (!isActive()) return
-    cameras.value = response.items
-    if (cameras.value.length > 0 && !selectedCameraId.value) {
-      selectedCameraId.value = cameras.value[0]!.id
+    cameras.value = items
+
+    const queryCamera = typeof route.query.camera === 'string' ? route.query.camera : ''
+    const current = items.find(camera => camera.id === selectedCameraId.value)
+    const fromQuery = items.find(camera => camera.id === queryCamera)
+    if (!current) {
+      selectedCameraId.value = fromQuery?.id ?? items[0]?.id ?? ''
     }
   } catch (error) {
     if (!isActive()) return
-    toast.error('Gagal memuat data camera')
+    toast.error('Gagal memuat data kamera', { description: errorMessage(error) })
+  } finally {
+    cameraLoading.value = false
   }
 }
 
-const fetchPredictionJobs = async () => {
-  if (!selectedCameraId.value || !apiStore.hasApiKey) return
-  loading.value = true
+async function fetchPredictionJobs(page = 1, append = false) {
+  if (!selectedCameraId.value || !hasApiKey.value) return
   const cameraId = selectedCameraId.value
+
+  if (append) {
+    loadingMoreJobs.value = true
+  } else {
+    loading.value = true
+    loadError.value = ''
+  }
+
   try {
-    const response = await apiListPredictionJobs(cameraId)
+    const response = await apiListPredictionJobs(cameraId, page)
     if (!isActive() || cameraId !== selectedCameraId.value) return
-    predictionJobs.value = response.items
-    // Start polling for jobs that are still in progress
+
+    const items = append ? [...predictionJobs.value, ...response.items] : response.items
+    const uniqueJobs = new Map(items.map(job => [job.id, job]))
+    predictionJobs.value = Array.from(uniqueJobs.values())
+    jobsPage.value = response.page
+    jobsTotal.value = response.total
+    jobsTotalPages.value = response.total_pages
+
     for (const job of response.items) {
       if (job.status === 'pending' || job.status === 'processing') {
-        startPolling(selectedCameraId.value, job.id)
+        startPolling(cameraId, job.id)
       }
     }
   } catch (error) {
     if (!isActive()) return
-    toast.error('Gagal memuat data prediksi')
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleImageUpload = (event: Event) => {
-  const target = event.target as HTMLInputElement | null
-  const file = target?.files?.[0]
-  if (file) {
-    uploadedImage.value = file
-  }
-}
-
-const onCameraChange = () => {
-  // Stop polling for previous camera's jobs
-  stopPolling()
-  fetchPredictionJobs()
-  checkPrerequisites()
-}
-
-const checkPrerequisites = async () => {
-  if (!selectedCameraId.value) {
-    prerequisites.value = null
-    return
-  }
-  checkingPrerequisites.value = true
-  try {
-    prerequisites.value = await checkPredictionPrerequisites(selectedCameraId.value)
-  } catch (error) {
-    if (!isActive()) return
-    prerequisites.value = {
-      has_active_calibration: false,
-      has_active_ground_model: false,
-      missing: ['Gagal memeriksa prasyarat'],
+    if (append) {
+      toast.error('Gagal memuat job berikutnya', { description: errorMessage(error) })
+    } else {
+      loadError.value = errorMessage(error)
+      toast.error('Gagal memuat data prediksi')
     }
   } finally {
-    checkingPrerequisites.value = false
+    if (isActive() && cameraId === selectedCameraId.value) {
+      loading.value = false
+      loadingMoreJobs.value = false
+    }
+  }
+}
+
+async function loadMoreJobs() {
+  await fetchPredictionJobs(jobsPage.value + 1, true)
+}
+
+function handleImageUpload(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  uploadedImage.value = target?.files?.[0] ?? null
+}
+
+async function onCameraChange() {
+  stopPolling()
+  jobsPage.value = 1
+  jobsTotal.value = 0
+  jobsTotalPages.value = 1
+  predictionJobs.value = []
+  selectedJob.value = null
+  jobOutputs.value = []
+  jobInstances.value = []
+  jobVolumes.value = []
+  jobDetailWarnings.value = []
+  isJobDetailOpen.value = false
+
+  const query: Record<string, string> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key !== 'job' && typeof value === 'string') query[key] = value
+  }
+  if (selectedCameraId.value) query.camera = selectedCameraId.value
+  await router.replace({ query })
+
+  await Promise.all([fetchPredictionJobs(1), checkPrerequisites()])
+}
+
+let prerequisiteRequestId = 0
+
+async function checkPrerequisites() {
+  if (!selectedCameraId.value) {
+    prerequisites.value = null
+    prerequisitesError.value = ''
+    return
+  }
+
+  const requestId = ++prerequisiteRequestId
+  const cameraId = selectedCameraId.value
+  checkingPrerequisites.value = true
+  prerequisitesError.value = ''
+
+  try {
+    const result = await checkPredictionPrerequisites(cameraId)
+    if (!isActive() || requestId !== prerequisiteRequestId || cameraId !== selectedCameraId.value) return
+    prerequisites.value = result
+  } catch (error) {
+    if (!isActive() || requestId !== prerequisiteRequestId || cameraId !== selectedCameraId.value) return
+    prerequisites.value = null
+    prerequisitesError.value = errorMessage(error)
+  } finally {
+    if (requestId === prerequisiteRequestId) {
+      checkingPrerequisites.value = false
+    }
   }
 }
 
 const openCreateModal = async () => {
+  if (!selectedCameraId.value) return
   predForm.value = {
     source_type: 'upload',
     seg_conf: 0.25,
     volume_cell_m: 0.05,
     volume_min_pts_per_cell: 2,
-    return_outputs: ['segmentation', 'bev', 'volume', 'instances'],
+    return_outputs: ['mask', 'overlay', 'bev_image', 'bev_overlay', 'instances_json'],
   }
   uploadedImage.value = null
+  submitError.value = ''
   isCreateModalOpen.value = true
   await checkPrerequisites()
 }
 
-const closeCreateModal = () => {
-  isCreateModalOpen.value = false
-}
-
-const submitPrediction = async () => {
-  if (!selectedCameraId.value) return
+async function submitPrediction() {
+  if (!selectedCameraId.value || submitting.value) return
 
   if (predForm.value.source_type !== 'upload') {
     toast.warning('Hanya tipe sumber Upload Gambar yang didukung saat ini')
@@ -498,38 +851,43 @@ const submitPrediction = async () => {
     return
   }
 
-  // Check prerequisites before submitting
   const pre = prerequisites.value
-  if (pre) {
-    if (!pre.has_active_calibration) {
-      toast.error('Tidak bisa menjalankan prediksi', {
-        description: 'Kamera belum memiliki kalibrasi aktif. Buat dan aktifkan kalibrasi terlebih dahulu.',
-      })
-      return
-    }
-    if (!pre.has_active_ground_model) {
-      toast.error('Tidak bisa menjalankan prediksi', {
-        description: 'Kamera belum memiliki model ground aktif. Buat referensi tanah dan aktifkan terlebih dahulu.',
-      })
-      return
-    }
-  } else {
-    // Re-check if not loaded
-    await checkPrerequisites()
-    const pre2 = prerequisites.value
-    if (pre2 && (!pre2.has_active_calibration || !pre2.has_active_ground_model)) {
-      return
-    }
+  if (!pre || prerequisitesError.value) {
+    toast.error('Prasyarat belum dapat diverifikasi', {
+      description: 'Periksa kembali kalibrasi dan model ground sebelum menjalankan prediksi.',
+    })
+    return
+  }
+  if (!pre.has_active_calibration) {
+    toast.error('Tidak bisa menjalankan prediksi', {
+      description: 'Kamera belum memiliki kalibrasi aktif. Buat dan aktifkan kalibrasi terlebih dahulu.',
+    })
+    return
+  }
+  if (!pre.has_active_ground_model) {
+    toast.error('Tidak bisa menjalankan prediksi', {
+      description: 'Kamera belum memiliki model ground aktif. Buat referensi tanah dan aktifkan terlebih dahulu.',
+    })
+    return
+  }
+
+  const segConf = Number(predForm.value.seg_conf)
+  const cellSize = Number(predForm.value.volume_cell_m)
+  const minPoints = Number(predForm.value.volume_min_pts_per_cell)
+  if (!Number.isFinite(segConf) || !Number.isFinite(cellSize) || !Number.isFinite(minPoints)) {
+    submitError.value = 'Isi confidence, cell size, dan minimal titik per sel dengan angka yang valid.'
+    return
   }
 
   submitting.value = true
+  submitError.value = ''
   try {
     const result = await apiSubmitPrediction(selectedCameraId.value, {
       source_type: predForm.value.source_type,
-      seg_conf: predForm.value.seg_conf,
-      volume_cell_m: predForm.value.volume_cell_m,
-      volume_min_pts_per_cell: predForm.value.volume_min_pts_per_cell,
-      return_outputs: predForm.value.return_outputs,
+      seg_conf: segConf,
+      volume_cell_m: cellSize,
+      volume_min_pts_per_cell: minPoints,
+      return_outputs: predForm.value.return_outputs.length > 0 ? predForm.value.return_outputs : undefined,
       file: uploadedImage.value,
     })
     if (!isActive()) return
@@ -537,13 +895,13 @@ const submitPrediction = async () => {
     toast.success('Prediksi berhasil dikirim', {
       description: `Job ID: ${result.job_id}`,
     })
-    closeCreateModal()
-    await fetchPredictionJobs()
-    // Start polling for the new job
+    isCreateModalOpen.value = false
+    await fetchPredictionJobs(1)
     startPolling(selectedCameraId.value, result.job_id)
   } catch (error: unknown) {
     if (!isActive()) return
     const err = error as { response?: { data?: { detail?: string } }; message?: string }
+    submitError.value = err.response?.data?.detail || err.message || 'Gagal menjalankan prediksi'
     toast.error('Gagal menjalankan prediksi', {
       description: err.response?.data?.detail || err.message,
     })
@@ -552,78 +910,125 @@ const submitPrediction = async () => {
   }
 }
 
-const viewJobDetails = async (jobId: string) => {
-  try {
+async function loadJobDetail(jobId: string, showLoading = true) {
+  const cameraId = selectedCameraId.value
+  if (!cameraId) return
+
+  if (showLoading) {
     loadingJobDetail.value = true
-    const [job, outputs, instances, volumes] = await Promise.all([
-      apiGetPredictionJob(selectedCameraId.value, jobId),
-      apiListPredictionOutputs(selectedCameraId.value, jobId),
-      apiGetPredictionInstances(selectedCameraId.value, jobId),
-      apiGetPredictionVolumes(selectedCameraId.value, jobId),
+    isJobDetailOpen.value = true
+    selectedJob.value = null
+    jobOutputs.value = []
+    jobInstances.value = []
+    jobVolumes.value = []
+  }
+  jobDetailWarnings.value = []
+
+  try {
+    const [jobResult, outputsResult, instancesResult, volumesResult] = await Promise.allSettled([
+      apiGetPredictionJob(cameraId, jobId),
+      apiListPredictionOutputs(cameraId, jobId),
+      apiGetPredictionInstances(cameraId, jobId),
+      apiGetPredictionVolumes(cameraId, jobId),
     ])
-    if (!isActive()) return
-    selectedJob.value = job
-    jobOutputs.value = outputs
-    jobInstances.value = instances
-    jobVolumes.value = volumes
-    // Start polling if job is still in progress
-    if (job.status === 'pending' || job.status === 'processing') {
-      startPolling(selectedCameraId.value, jobId)
+    if (!isActive() || cameraId !== selectedCameraId.value) return
+
+    if (jobResult.status === 'rejected') {
+      toast.error('Gagal memuat detail job', { description: errorMessage(jobResult.reason) })
+      return
     }
-  } catch (error) {
-    if (!isActive()) return
-    toast.error('Gagal memuat detail job')
+
+    selectedJob.value = jobResult.value
+
+    if (outputsResult.status === 'fulfilled') {
+      jobOutputs.value = outputsResult.value
+    } else {
+      jobOutputs.value = []
+      jobDetailWarnings.value.push('Output gambar tidak dapat dimuat.')
+    }
+
+    if (instancesResult.status === 'fulfilled') {
+      jobInstances.value = instancesResult.value
+    } else {
+      jobInstances.value = []
+      jobDetailWarnings.value.push('Instance terdeteksi tidak dapat dimuat.')
+    }
+
+    if (volumesResult.status === 'fulfilled') {
+      jobVolumes.value = volumesResult.value
+    } else {
+      jobVolumes.value = []
+      jobDetailWarnings.value.push('Estimasi volume belum tersedia atau gagal dimuat.')
+    }
+
+    isJobDetailOpen.value = true
+    if (jobResult.value.status === 'pending' || jobResult.value.status === 'processing') {
+      startPolling(cameraId, jobId)
+    }
   } finally {
-    loadingJobDetail.value = false
+    if (showLoading && isActive()) loadingJobDetail.value = false
   }
 }
 
-const deleteJob = async (jobId: string) => {
-  if (confirm('Apakah Anda yakin ingin menghapus job prediksi ini?')) {
-    toast.warning('Hapus job prediksi belum tersedia di API')
-  }
+async function viewJobDetails(jobId: string) {
+  await loadJobDetail(jobId, true)
+  if (selectedJob.value?.id !== jobId || !isJobDetailOpen.value) return
+
+  await router.replace({
+    query: {
+      ...route.query,
+      camera: selectedCameraId.value,
+      job: jobId,
+    },
+  })
 }
 
-const formatOutputType = (type: string) => {
+function onJobDetailOpenChange(open: boolean) {
+  isJobDetailOpen.value = open
+  if (open || typeof route.query.job !== 'string') return
+
+  const query: Record<string, string> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key !== 'job' && typeof value === 'string') query[key] = value
+  }
+  void router.replace({ query })
+}
+
+function formatOutputType(type: string) {
   const labels: Record<string, string> = {
     mask: 'Mask Segmentasi',
     overlay: 'Overlay Segmentasi',
     instances_json: 'Instance JSON',
-    depth_raw_vis: 'Depth Raw',
-    depth_scaled_vis: 'Depth Terkalibrasi',
-    depth_masked: 'Depth Termask',
+    depth_raw_vis: 'Depth Raw Vis',
+    depth_scaled_vis: 'Depth Scaled Vis',
+    depth_masked: 'Depth Masked',
     height_map: 'Height Map',
     lifted_points_npz: 'Titik 3D (NPZ)',
     volume_heatmap: 'Heatmap Volume',
-    volume_result_npz: 'Volume Result (NPZ)',
+    volume_result_npz: 'Volume Result NPZ',
     bev_image: 'BEV Image',
-    bev_mask_proyeksi: 'BEV Mask',
+    bev_mask_proyeksi: 'BEV Mask Proyeksi',
     bev_overlay: 'BEV Overlay',
   }
   return labels[type] || type
 }
 
-const handleImageError = (output: PredictionOutput) => {
-  console.warn('Failed to load image:', output.output_type)
+function volumeMethodLabel(method: string): string {
+  if (method === 'grid') return 'Grid/Voxel'
+  if (method === 'convex_hull') return 'Convex Hull'
+  return method
 }
 
-const closeJobDetail = () => {
-  selectedJob.value = null
-  jobOutputs.value = []
-  jobInstances.value = []
-  jobVolumes.value = []
-}
-
-const getSourceTypeClass = (type: string) => {
+function getSourceTypeBadgeClass(type: string): string {
   const classes: Record<string, string> = {
-    upload: 'bg-blue-100 text-blue-700',
-    rtsp_frame: 'bg-purple-100 text-purple-700',
-    latest_rtsp: 'bg-indigo-100 text-indigo-700',
+    upload: 'badge-primary',
+    rtsp_frame: 'badge-warning',
+    latest_rtsp: 'badge-warning',
   }
-  return classes[type] || 'bg-gray-100 text-gray-700'
+  return classes[type] || 'badge-neutral'
 }
 
-const formatSourceType = (type: string) => {
+function formatSourceType(type: string): string {
   const labels: Record<string, string> = {
     upload: 'Upload Gambar',
     rtsp_frame: 'Frame RTSP',
@@ -632,17 +1037,17 @@ const formatSourceType = (type: string) => {
   return labels[type] || type
 }
 
-const getStatusClass = (status: string) => {
+function getStatusBadgeClass(status: string): string {
   const classes: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-700',
-    processing: 'bg-blue-100 text-blue-700',
-    done: 'bg-green-100 text-green-700',
-    failed: 'bg-red-100 text-red-700',
+    pending: 'badge-warning',
+    processing: 'bg-brand-light text-brand',
+    done: 'badge-positive',
+    failed: 'badge-negative',
   }
-  return classes[status] || 'bg-gray-100 text-gray-700'
+  return classes[status] || 'badge-neutral'
 }
 
-const formatStatus = (status: string) => {
+function formatStatus(status: string): string {
   const labels: Record<string, string> = {
     pending: 'Menunggu',
     processing: 'Memproses',
@@ -652,17 +1057,17 @@ const formatStatus = (status: string) => {
   return labels[status] || status
 }
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('id-ID', {
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleString('id-ID', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 
-const formatBytes = (bytes: number) => {
+function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
   const k = 1024
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
@@ -675,9 +1080,52 @@ const displayStatus = (job: PredictionJob) => {
   return pollingStatus ?? job.status
 }
 
-onMounted(async () => {
-  if (apiStore.hasApiKey) {
-    await fetchCameras()
+onMounted(() => {
+  if (hasApiKey.value) void initialize()
+})
+
+async function initialize() {
+  await fetchCameras()
+  if (!isActive() || !selectedCameraId.value) return
+
+  await Promise.all([fetchPredictionJobs(1), checkPrerequisites()])
+  if (!isActive()) return
+
+  const jobQuery = typeof route.query.job === 'string' ? route.query.job : ''
+  if (jobQuery) {
+    await loadJobDetail(jobQuery, true)
   }
+}
+
+function resetPredictionState() {
+  stopPolling()
+  cameras.value = []
+  predictionJobs.value = []
+  selectedCameraId.value = ''
+  selectedJob.value = null
+  jobOutputs.value = []
+  jobInstances.value = []
+  jobVolumes.value = []
+  jobDetailWarnings.value = []
+  isJobDetailOpen.value = false
+  prerequisites.value = null
+  prerequisitesError.value = ''
+  jobsPage.value = 1
+  jobsTotal.value = 0
+  jobsTotalPages.value = 1
+}
+
+watch(() => apiStore.hasApiKey, (newVal) => {
+  if (newVal) {
+    void initialize()
+  } else {
+    resetPredictionState()
+  }
+})
+
+watch(() => route.query.job, (value) => {
+  if (typeof value !== 'string' || !value) return
+  if (value === selectedJob.value?.id || loadingJobDetail.value) return
+  void loadJobDetail(value, true)
 })
 </script>

@@ -1,25 +1,37 @@
 import { test, expect, type Page } from '@playwright/test'
 import { installApiFixture } from './fixtures/api'
 
-async function checkTargets(page: Page) {
+async function checkTargets(page: Page, selector = 'header a, header button') {
   await page.evaluate(async () => {
     await Promise.all(document.getAnimations()
       .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
       .map(animation => animation.finished.catch(() => {})))
   })
-  const targets = await page.locator('header a, header button').evaluateAll(elements =>
-    elements.filter(element => element.getBoundingClientRect().width > 0).map(element => {
+  const targets = await page.locator(selector).evaluateAll(elements =>
+    elements.map(element => {
       const box = element.getBoundingClientRect()
+      let clipped = { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+      let parent = element.parentElement
+      while (parent) {
+        const style = getComputedStyle(parent)
+        if (/(auto|scroll|hidden|clip)/.test(style.overflowX + style.overflowY)) {
+          const parentBox = parent.getBoundingClientRect()
+          clipped = {
+            left: Math.max(clipped.left, parentBox.left),
+            right: Math.min(clipped.right, parentBox.right),
+            top: Math.max(clipped.top, parentBox.top),
+            bottom: Math.min(clipped.bottom, parentBox.bottom),
+          }
+        }
+        parent = parent.parentElement
+      }
       return {
         label: element.getAttribute('aria-label') || element.textContent?.trim(),
-        left: box.left,
-        right: box.right,
-        top: box.top,
-        bottom: box.bottom,
-        width: box.width,
-        height: box.height,
+        ...clipped,
+        width: clipped.right - clipped.left,
+        height: clipped.bottom - clipped.top,
       }
-    }),
+    }).filter(target => target.width > 0 && target.height > 0),
   )
   const width = page.viewportSize()!.width
   for (const target of targets) {
@@ -39,6 +51,19 @@ async function checkTargets(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 }
 
+async function expectDrawerClosed(page: Page) {
+  const sidebar = page.locator('#sidebar')
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+  expect(await sidebar.evaluate(element => (element as HTMLElement).inert)).toBe(true)
+}
+
+async function expectDrawerOpen(page: Page) {
+  const sidebar = page.locator('#sidebar')
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar).not.toHaveAttribute('aria-hidden', 'true')
+  expect(await sidebar.evaluate(element => (element as HTMLElement).inert)).toBe(false)
+}
+
 for (const width of [320, 390, 600, 768, 1024, 1440]) {
   test(`header targets fit with stored, verified and cleared keys at ${width}px`, async ({ page }) => {
     await installApiFixture(page, true)
@@ -48,58 +73,73 @@ for (const width of [320, 390, 600, 768, 1024, 1440]) {
     await page.getByRole('button', { name: 'Simpan Konfigurasi' }).click()
     await expect(page.getByRole('alert')).toContainText('Akses camera:read terverifikasi')
     await checkTargets(page)
-    if (width < 768) {
+
+    if (width < 1024) {
+      await expectDrawerClosed(page)
       await page.getByRole('button', { name: 'Buka menu navigasi' }).click()
-      await expect(page.getByRole('menuitem', { name: 'Dashboard', exact: true })).toBeVisible()
-      await checkTargets(page)
+      await expectDrawerOpen(page)
+      await expect(page.locator('#sidebar').getByRole('link', { name: 'Ringkasan', exact: true })).toBeVisible()
+      await checkTargets(page, '#sidebar a[href], #sidebar button')
       await page.keyboard.press('Escape')
-      await expect(page.locator('#mobile-menu')).not.toBeVisible()
+      await expectDrawerClosed(page)
     }
+
     await page.locator('header').getByRole('button', { name: 'Keluar', exact: true }).click()
     await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
     await checkTargets(page)
-    await expect(page.getByRole('link', { name: 'Masuk / Atur API Key' })).toHaveAttribute('href', '/dashboard/settings')
+    await expect(page.locator('header').getByRole('link', { name: 'Atur API Key', exact: true })).toHaveAttribute('href', '/dashboard/settings')
   })
 }
 
-test('mobile menu supports keyboard navigation, same-route dismissal and logout focus', async ({ page }) => {
+test('mobile drawer traps focus, closes with Escape and restores the trigger', async ({ page }) => {
   await installApiFixture(page, true)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/dashboard/settings')
+  await page.goto('/dashboard')
+
   const trigger = page.getByRole('button', { name: 'Buka menu navigasi' })
-  const menu = page.locator('#mobile-menu')
+  const sidebar = page.locator('#sidebar')
+  const close = page.getByRole('button', { name: 'Tutup menu navigasi' })
+  const lastLink = sidebar.getByRole('link', { name: 'Kelola API Key' })
+
+  await expectDrawerClosed(page)
   await trigger.focus()
-  await trigger.press('Space')
-  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
-  const home = page.getByRole('menuitem', { name: 'Beranda', exact: true })
-  const dashboard = page.getByRole('menuitem', { name: 'Dashboard', exact: true })
-  await expect(menu).toHaveAttribute('aria-activedescendant', await home.getAttribute('id') as string)
-  await page.keyboard.press('ArrowDown')
-  await expect(menu).toHaveAttribute('aria-activedescendant', await dashboard.getAttribute('id') as string)
-  await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(menu).not.toBeVisible()
-  await expect(trigger).toBeFocused()
-  await trigger.click()
-  await dashboard.click()
-  await expect(menu).not.toBeVisible()
-  await expect(trigger).toBeFocused()
   await trigger.press('Enter')
-  await expect(menu).toBeVisible()
+  await expectDrawerOpen(page)
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  await expect(close).toBeFocused()
+
+  await page.keyboard.press('Shift+Tab')
+  await expect(lastLink).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+
   await page.keyboard.press('Escape')
-  await expect(menu).not.toBeVisible()
+  await expectDrawerClosed(page)
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   await expect(trigger).toBeFocused()
-  await trigger.press('Space')
-  await expect(menu).toBeVisible()
-  await page.keyboard.press('End')
-  const logout = page.getByRole('menuitem', { name: 'Keluar', exact: true })
-  await expect(menu).toHaveAttribute('aria-activedescendant', await logout.getAttribute('id') as string)
-  await page.keyboard.press('Enter')
-  await expect(menu).not.toBeVisible()
-  await expect(trigger).toBeFocused()
-  expect(await page.evaluate(() => localStorage.getItem('api_key'))).toBeNull()
-  await page.getByRole('link', { name: 'Masuk / Atur API Key' }).press('Enter')
+})
+
+test('mobile drawer navigation uses real routes, closes and restores focus', async ({ page }) => {
+  await installApiFixture(page, true)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/dashboard')
+
+  const trigger = page.getByRole('button', { name: 'Buka menu navigasi' })
+  const sidebar = page.locator('#sidebar')
+
+  await trigger.click()
+  await expectDrawerOpen(page)
+  await sidebar.getByRole('link', { name: 'Pengaturan', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard\/settings$/)
+  await expectDrawerClosed(page)
+  await expect(trigger).toBeFocused()
+
+  await trigger.click()
+  await expectDrawerOpen(page)
+  await sidebar.getByRole('link', { name: 'Ringkasan', exact: true }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
+  await expectDrawerClosed(page)
+  await expect(trigger).toBeFocused()
 })
 
 for (const width of [390, 768, 1280]) {
@@ -111,5 +151,10 @@ for (const width of [390, 768, 1280]) {
     await checkTargets(page)
     await page.locator('header').getByRole('button', { name: 'Keluar', exact: true }).click()
     await checkTargets(page)
+    if (width < 1024) {
+      await page.getByRole('button', { name: 'Buka menu navigasi' }).click()
+      await expectDrawerOpen(page)
+      await checkTargets(page, '#sidebar a[href], #sidebar button')
+    }
   })
 }

@@ -1,342 +1,377 @@
 <template>
-  <div ref="view" class="min-w-0 space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <h1 class="text-2xl font-bold">Manajemen Kamera</h1>
-      <Button data-camera-create :disabled="!apiStore.hasApiKey" @click="openCreateDialog">
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <h1 class="text-2xl font-bold text-text">Manajemen Kamera</h1>
+      <Button 
+        variant="primary" 
+        :disabled="!hasApiKey" 
+        @click="openCreateDialog"
+        data-camera-create
+      >
+        <Video class="w-4 h-4" aria-hidden="true" />
         Tambah Kamera
       </Button>
     </div>
 
-    <Alert v-if="!apiStore.hasApiKey">
-      <AlertTitle>API Key belum diatur</AlertTitle>
-      <AlertDescription>
-        Atur akses API sebelum memuat atau menambahkan kamera.
-        <RouterLink to="/dashboard/settings"
-          class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">
-          Buka Pengaturan
-        </RouterLink>
-      </AlertDescription>
-    </Alert>
+    <div v-if="!hasApiKey" class="card border-warning-border bg-warning-bg/50">
+      <div class="flex items-start gap-3">
+        <AlertCircle class="w-5 h-5 text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div class="flex-1">
+          <p class="font-medium text-text">API Key belum diatur</p>
+          <p class="text-sm text-text-muted mt-1">
+            Atur akses API sebelum memuat atau menambahkan kamera.
+            <RouterLink to="/dashboard/settings" class="text-brand underline ml-1">Buka Pengaturan</RouterLink>
+          </p>
+        </div>
+      </div>
+    </div>
 
-    <Card class="min-w-0 gap-0 py-0">
-      <CardContent class="min-w-0 p-0">
-        <Table aria-label="Daftar kamera">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nama</TableHead>
-              <TableHead class="text-right">Resolusi</TableHead>
-              <TableHead class="text-right">FPS</TableHead>
-              <TableHead class="text-right">Lokasi</TableHead>
-              <TableHead>Status Kalibrasi</TableHead>
-              <TableHead>Status Stream</TableHead>
-              <TableHead>Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow v-if="loading">
-              <TableCell colspan="6">
-                <div role="status" class="space-y-3">
-                  <p class="text-muted-foreground">Memuat data kamera...</p>
-                  <Skeleton class="h-5 w-full" />
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow v-else-if="loadError">
-              <TableCell colspan="6" class="whitespace-normal">
-                <Alert variant="destructive">
-                  <AlertTitle>Gagal memuat data kamera</AlertTitle>
-                  <AlertDescription>
-                    <p>{{ loadError }}</p>
-                    <Button variant="outline" class="mt-2 w-fit text-foreground" @click="fetchCameras">Coba
-                      Lagi</Button>
-                  </AlertDescription>
-                </Alert>
-              </TableCell>
-            </TableRow>
-            <TableRow v-for="camera in loadError ? [] : cameras" :key="camera.id">
-              <TableCell class="min-w-52 max-w-80 whitespace-normal">
-                <div class="break-words font-medium">{{ camera.name }}</div>
-                <div class="break-all text-xs text-muted-foreground">{{ camera.id }}</div>
-              </TableCell>
-              <TableCell class="text-right tabular-nums">{{ camera.resolution_w }}x{{ camera.resolution_h }}</TableCell>
-              <TableCell class="text-right tabular-nums">{{ camera.fps }}</TableCell>
-              <TableCell class="text-right tabular-nums text-muted-foreground">
-                {{ camera.latitude?.toFixed(4) ?? '-' }}, {{ camera.longitude?.toFixed(4) ?? '-' }}
-              </TableCell>
-              <TableCell>
-                <Badge v-if="cameraStatuses[camera.id] === 'active'">Kalibrasi aktif</Badge>
-                <Badge v-else-if="cameraStatuses[camera.id] === 'loading'" variant="secondary">Memeriksa...</Badge>
-                <Badge v-else-if="cameraStatuses[camera.id] === 'error'" variant="destructive">Gagal diperiksa</Badge>
-                <Badge v-else variant="secondary">Belum Dikalibrasi</Badge>
-              </TableCell>
-              <TableCell>
-                <Badge :variant="camera.stream_enabled ? (camera.stream_enabled ? 'default' : 'secondary') : 'secondary'">
-                  {{ camera.stream_enabled ? 'Aktif' : 'Non-Aktif' }}
+    <!-- Loading State -->
+    <div v-else-if="loading" class="loading-state" role="status" aria-label="Memuat daftar kamera">
+      <div class="spinner" aria-hidden="true" />
+      Memuat data kamera...
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="loadError" class="error-state" role="alert">
+      <AlertCircle class="w-6 h-6" aria-hidden="true" />
+      <p class="error-state-title">Gagal memuat data kamera</p>
+      <p class="error-state-description">{{ loadError }}</p>
+      <Button variant="outline" @click="fetchCameras" class="btn-sm">Coba Lagi</Button>
+    </div>
+
+    <!-- Camera Table -->
+    <div v-else class="card overflow-hidden">
+      <div class="table-container">
+        <table class="table" aria-label="Daftar kamera">
+          <thead>
+            <tr>
+              <th scope="col">Nama</th>
+              <th scope="col" class="numeric">Resolusi</th>
+              <th scope="col" class="numeric">FPS</th>
+              <th scope="col" class="numeric">Lokasi</th>
+              <th scope="col">Status Kalibrasi</th>
+              <th scope="col">Status Stream</th>
+              <th scope="col">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="camera in cameras" :key="camera.id">
+              <td class="min-w-[200px] max-w-[300px]">
+                <div class="font-medium text-text truncate">{{ camera.name }}</div>
+                <div class="font-mono text-xs text-text-muted truncate">{{ camera.id }}</div>
+              </td>
+              <td class="numeric tabular-nums">{{ camera.resolution_w }} × {{ camera.resolution_h }}</td>
+              <td class="numeric tabular-nums">{{ camera.fps }}</td>
+              <td class="numeric tabular-nums text-text-muted">
+                {{ camera.latitude !== null && camera.longitude !== null 
+                  ? `${camera.latitude.toFixed(4)}, ${camera.longitude.toFixed(4)}` 
+                  : '-' }}
+              </td>
+              <td>
+                <Badge :class="getCalibrationBadgeClass(camera.id)">
+                  {{ getCalibrationStatusText(camera.id) }}
                 </Badge>
-              </TableCell>
-              <TableCell>
-                <div class="flex gap-2 flex-wrap">
-                  <Button variant="ghost" :aria-label="`Pratinjau ${camera.name}`"
-                    @click="openPreview(camera, $event)">Pratinjau</Button
+              </td>
+              <td>
+                <Badge :class="camera.stream_enabled ? 'badge-positive' : 'badge-neutral'">
+                  {{ camera.stream_enabled ? 'Aktif' : 'Nonaktif' }}
+                </Badge>
+              </td>
+              <td>
+                <div class="flex flex-wrap gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    :aria-label="`Pratinjau ${camera.name}`"
+                    @click="openPreview(camera)"
+                    :disabled="!camera.stream_enabled"
                   >
-                  <Button variant="ghost" :aria-label="`Ambil Snapshot ${camera.name}`"
-                    @click="openSnapshot(camera, $event)" :disabled="!camera.stream_enabled || loading">Ambil
-                    Snapshot</Button
+                    Pratinjau
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    :aria-label="`Ambil Snapshot ${camera.name}`"
+                    @click="openSnapshot(camera)"
+                    :disabled="!camera.stream_enabled || loading"
                   >
-                  <Button
-                    variant="ghost"
+                    Snapshot
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
                     :aria-label="`${camera.stream_enabled ? 'Nonaktifkan' : 'Aktifkan'} Stream ${camera.name}`"
                     @click="toggleStream(camera)"
                     :disabled="loading || togglingStreamId === camera.id"
                   >
-                    {{ togglingStreamId === camera.id ? 'Memproses...' : (camera.stream_enabled ? 'Nonaktifkan Stream' : 'Aktifkan Stream') }}
+                    {{ togglingStreamId === camera.id ? 'Memproses...' : (camera.stream_enabled ? 'Nonaktifkan' : 'Aktifkan') }}
                   </Button>
-                  <Button variant="ghost" :aria-label="`Edit ${camera.name}`"
-                    @click="editCamera(camera, $event)">Edit</Button
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    :aria-label="`Edit ${camera.name}`"
+                    :data-camera-edit="camera.id"
+                    @click="editCamera(camera)"
                   >
-                  <Button variant="ghost" class="text-destructive hover:text-destructive"
-                    :aria-label="`Hapus ${camera.name}`" @click="confirmDelete(camera, $event)">Hapus</Button
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    class="text-destructive hover:text-destructive"
+                    :aria-label="`Hapus ${camera.name}`" 
+                    @click="confirmDelete(camera)"
                   >
+                    Hapus
+                  </Button>
                 </div>
-              </TableCell>
-            </TableRow>
-            <TableRow v-if="!loading && !loadError && apiStore.hasApiKey && !cameras.length">
-              <TableCell colspan="6" class="py-8 text-center whitespace-normal text-muted-foreground">
+              </td>
+            </tr>
+            <tr v-if="cameras.length === 0">
+              <td colspan="7" class="py-8 text-center text-text-muted">
                 Belum ada kamera terdaftar. Klik "Tambah Kamera" untuk memulai.
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-    <Dialog :open="isCameraDialogOpen" @update:open="setCameraDialogOpen">
-      <DialogContent :show-close-button="!saving && !removingSource" @close-auto-focus="restoreFocus"
-        @escape-key-down="preventWhileSaving" @interact-outside="preventWhileSaving">
+    <!-- Create/Edit Camera Dialog -->
+    <Dialog
+      v-model:open="isCameraDialogOpen"
+      :show-close-button="!saving"
+      :disabled="saving"
+      content-class="max-w-lg"
+    >
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ editingCamera ? 'Edit Kamera' : 'Tambah Kamera Baru' }}</DialogTitle>
           <DialogDescription>Atur identitas, resolusi, dan lokasi kamera.</DialogDescription>
         </DialogHeader>
         <form class="space-y-4" @submit.prevent="saveCamera">
-          <fieldset :disabled="saving || removingSource" class="min-w-0 space-y-4">
-            <div class="space-y-2">
-              <Label for="camera-name">Nama Kamera</Label>
-              <Input id="camera-name" v-model="form.name" required maxlength="100" />
-            </div>
-            <div class="space-y-2">
-              <Label for="camera-rtsp">RTSP URL</Label>
-              <Input id="camera-rtsp" v-model="form.rtsp_url" type="password" autocomplete="new-password"
-                spellcheck="false" maxlength="500" aria-describedby="camera-rtsp-help" />
-              <p id="camera-rtsp-help" class="text-xs text-muted-foreground">
-                {{ editingCamera
-                  ? `Sumber ${editingCamera.rtsp_configured ? 'sudah' : 'belum'} dikonfigurasi. Kosong
-                berarti tidak diubah; isi hanya untuk mengganti sumber.`
-                  : 'Opsional. URL hanya dikirim ke backend saat disimpan, tidak ditampilkan kembali.' }}
-              </p>
-              <Button v-if="editingCamera?.rtsp_configured" variant="outline" class="text-destructive"
-                :disabled="saving || removingSource" @click="confirmRemoveSource">Hapus Sumber RTSP</Button>
-            </div>
-            <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2">
-              <div class="space-y-2">
-                <Label for="camera-width">Resolusi W</Label>
-                <Input id="camera-width" v-model="form.resolution_w" type="number" required min="1" max="10000"
-                  step="1" />
-              </div>
-              <div class="space-y-2">
-                <Label for="camera-height">Resolusi H</Label>
-                <Input id="camera-height" v-model="form.resolution_h" type="number" required min="1" max="10000"
-                  step="1" />
-              </div>
-            </div>
-            <div class="space-y-2">
-              <Label for="camera-fps">FPS</Label>
-              <Input id="camera-fps" v-model="form.fps" type="number" required min="1" max="120" step="1" />
-            </div>
-            <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2" aria-describedby="camera-location-help">
-              <div class="space-y-2">
-                <Label for="camera-latitude">Latitude</Label>
-                <Input id="camera-latitude" v-model="form.latitude" type="number" min="-90" max="90" step="any"
-                  aria-describedby="camera-location-help" />
-              </div>
-              <div class="space-y-2">
-                <Label for="camera-longitude">Longitude</Label>
-                <Input id="camera-longitude" v-model="form.longitude" type="number" min="-180" max="180" step="any"
-                  aria-describedby="camera-location-help" />
-              </div>
-            </div>
-            <p id="camera-location-help" class="text-xs text-muted-foreground">
-              Opsional. Koordinat kosong tidak dikirim.
+          <div class="space-y-2">
+            <Label for="camera-name">Nama Kamera</Label>
+            <input id="camera-name" v-model="form.name" required maxlength="100" class="input" />
+          </div>
+          <div class="space-y-2">
+            <Label for="camera-rtsp">RTSP URL</Label>
+            <input 
+  id="camera-rtsp" 
+  v-model="form.rtsp_url" 
+  type="password" 
+  autocomplete="new-password"
+  :spellcheck="false" 
+  maxlength="500" 
+  aria-describedby="camera-rtsp-help" 
+  class="input"
+/>
+            <p id="camera-rtsp-help" class="text-xs text-text-muted">
+              {{ editingCamera
+                ? `Sumber ${editingCamera.rtsp_configured ? 'sudah' : 'belum'} dikonfigurasi. Kosong berarti tidak diubah; isi hanya untuk mengganti sumber.`
+                : 'Opsional. URL hanya dikirim ke backend saat disimpan, tidak ditampilkan kembali.' }}
             </p>
-          </fieldset>
-          <Alert v-if="saveError" variant="destructive">
-            <AlertTitle>Gagal menyimpan kamera</AlertTitle>
-            <AlertDescription>{{ saveError }}</AlertDescription>
-          </Alert>
+            <Button 
+              v-if="editingCamera?.rtsp_configured" 
+              type="button"
+              variant="outline" 
+              class="text-destructive"
+              :disabled="saving || removingSource" 
+              data-hapus-sumber="true"
+              @click="confirmRemoveSource"
+            >
+              Hapus Sumber RTSP
+            </Button>
+          </div>
+          <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="camera-width">Resolusi W</Label>
+              <Input id="camera-width" v-model="form.resolution_w" type="number" required min="1" max="10000" step="1" class="input" />
+            </div>
+            <div class="space-y-2">
+              <Label for="camera-height">Resolusi H</Label>
+              <Input id="camera-height" v-model="form.resolution_h" type="number" required min="1" max="10000" step="1" class="input" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <Label for="camera-fps">FPS</Label>
+            <Input id="camera-fps" v-model="form.fps" type="number" required min="1" max="120" step="1" class="input" />
+          </div>
+          <div class="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2" aria-describedby="camera-location-help">
+            <div class="space-y-2">
+              <Label for="camera-latitude">Latitude</Label>
+              <Input id="camera-latitude" v-model="form.latitude" type="number" min="-90" max="90" step="any" class="input" />
+            </div>
+            <div class="space-y-2">
+              <Label for="camera-longitude">Longitude</Label>
+              <Input id="camera-longitude" v-model="form.longitude" type="number" min="-180" max="180" step="any" class="input" />
+            </div>
+          </div>
+          <p id="camera-location-help" class="text-xs text-text-muted">Opsional. Koordinat kosong tidak dikirim.</p>
+          
+          <div v-if="saveError" class="error-state" role="alert">
+            <AlertCircle class="w-5 h-5" aria-hidden="true" />
+            <p class="font-medium text-text">Gagal menyimpan kamera</p>
+            <p class="text-sm text-text-muted">{{ saveError }}</p>
+          </div>
+          
           <DialogFooter>
-            <Button variant="outline" :disabled="saving || removingSource"
-              @click="setCameraDialogOpen(false)">Batal</Button>
-            <Button type="submit" :disabled="saving || removingSource" :aria-busy="saving">
-              {{
-                saving
-                  ? 'Menyimpan kamera...'
-                  : editingCamera
-                    ? 'Simpan Perubahan'
-                    : 'Tambah Kamera'
-              }}
+            <Button type="button" variant="secondary" :disabled="saving || removingSource" @click="isCameraDialogOpen = false">Batal</Button>
+            <Button type="submit" :disabled="saving || removingSource" :aria-busy="saving" variant="primary">
+              {{ saving ? 'Menyimpan kamera...' : (editingCamera ? 'Simpan Perubahan' : 'Tambah Kamera') }}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
 
-    <AlertDialog :open="isRemoveSourceDialogOpen"
-      @update:open="value => { if (!removingSource) isRemoveSourceDialogOpen = value }">
-      <AlertDialogContent @close-auto-focus="restoreSourceFocus"
-        @escape-key-down="event => { if (removingSource) event.preventDefault() }">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Hapus Sumber RTSP?</AlertDialogTitle>
-          <AlertDialogDescription>Sumber untuk {{ editingCamera?.name }} akan dihapus dan stream dinonaktifkan. Draf
-            metadata belum disimpan.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <Alert v-if="removeSourceError" variant="destructive">
-          <AlertTitle>Gagal menghapus sumber</AlertTitle>
-          <AlertDescription>{{ removeSourceError }}</AlertDescription>
-        </Alert>
-        <AlertDialogFooter>
-          <AlertDialogCancel :disabled="removingSource">Batal</AlertDialogCancel>
-          <Button variant="destructive" :disabled="removingSource" :aria-busy="removingSource" @click="removeSource">{{
-            removingSource ? 'Menghapus sumber...' : 'Hapus Sumber' }}</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-
-    <AlertDialog :open="isDeleteDialogOpen" @update:open="setDeleteDialogOpen">
-      <AlertDialogContent @close-auto-focus="restoreFocus" @escape-key-down="preventWhileDeleting">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Hapus Kamera?</AlertDialogTitle>
-          <AlertDialogDescription class="break-words">
-            Kamera "{{ deletingCamera?.name }}" beserta kalibrasi dan job terkait akan dihapus.
-            Tindakan ini tidak dapat dibatalkan.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <Alert v-if="deleteError" variant="destructive">
-          <AlertTitle>Gagal menghapus kamera</AlertTitle>
-          <AlertDescription>{{ deleteError }}</AlertDescription>
-        </Alert>
-        <AlertDialogFooter>
-          <AlertDialogCancel :disabled="deleting">Batal</AlertDialogCancel>
-          <Button variant="destructive" :disabled="deleting" :aria-busy="deleting" @click="deleteCamera">
-            {{ deleting ? 'Menghapus kamera...' : 'Hapus Kamera' }}
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-
-    <Dialog :open="isPreviewDialogOpen" @update:open="setPreviewDialogOpen">
-      <DialogContent :show-close-button="!previewLoading" class="max-w-4xl max-h-[90vh]"
-        @close-auto-focus="restorePreviewFocus">
+    <!-- Remove RTSP Source Dialog -->
+    <Dialog
+      v-model:open="isRemoveSourceDialogOpen"
+      role="alertdialog"
+      :show-close-button="!removingSource"
+      :disabled="removingSource"
+      content-class="max-w-md"
+    >
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Pratinjau Stream: {{ previewCamera?.name }}</DialogTitle>
-          <DialogDescription>
-            Stream WHEP receive-only. Gunakan tombol Reconnect jika koneksi terputus.
-          </DialogDescription>
+          <DialogTitle>Hapus Sumber RTSP?</DialogTitle>
+          <DialogDescription>Sumber untuk {{ editingCamera?.name }} akan dihapus dan stream dinonaktifkan. Draf metadata belum disimpan.</DialogDescription>
         </DialogHeader>
-        <div class="space-y-4">
-          <div v-if="previewLoading" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-            <div class="text-center text-white">
-              <div
-                class="animate-spin rounded-full h-10 w-10 border-3 border-primary border-t-transparent mx-auto mb-3" />
-              <p>Memuat stream...</p>
-            </div>
-          </div>
-          <div v-else-if="previewError || !streamState?.whep_url"
-            class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center p-4">
-            <div class="text-center text-white">
-              <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p class="mb-3">{{ previewError || 'Stream tidak tersedia. Aktifkan stream pada kamera ini.' }}</p>
-              <Button variant="outline" @click="loadStream">Coba Lagi</Button>
-            </div>
-          </div>
-          <WhepPlayer v-else :camera-id="previewCamera!.id" :whep-path="streamState!.whep_url!" :context="apiContext"
-            class="aspect-video" />
-          <div v-if="streamState" class="flex gap-4 text-sm text-muted-foreground">
-            <span>Status: <span class="text-foreground capitalize">{{ streamState.status }}</span></span>
-            <span>Synced: <span class="text-foreground">{{ streamState.synced ? 'Ya' : 'Tidak' }}</span></span>
-            <span>Tracks: <span class="text-foreground">{{ streamState.tracks.join(', ') || '—' }}</span></span>
-            <span>Checked: <span class="text-foreground">{{ new Date(streamState.checked_at).toLocaleTimeString()
-                }}</span></span>
-          </div>
+        <div v-if="removeSourceError" class="error-state" role="alert">
+          <AlertCircle class="w-5 h-5" aria-hidden="true" />
+          <p class="font-medium text-text">Gagal menghapus sumber</p>
+          <p class="text-sm text-text-muted">{{ removeSourceError }}</p>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="setPreviewDialogOpen(false)">Tutup</Button>
+          <Button variant="secondary" :disabled="removingSource" @click="isRemoveSourceDialogOpen = false">Batal</Button>
+          <Button variant="destructive" :disabled="removingSource" :aria-busy="removingSource" @click="removeSource">
+            {{ removingSource ? 'Menghapus sumber...' : 'Hapus Sumber' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <Dialog :open="isSnapshotDialogOpen" @update:open="setSnapshotDialogOpen">
-      <DialogContent class="max-w-2xl max-h-[90vh]" :show-close-button="!snapshotLoading"
-        @close-auto-focus="restoreSnapshotFocus">
+    <!-- Delete Camera Dialog -->
+    <Dialog
+      v-model:open="isDeleteDialogOpen"
+      role="alertdialog"
+      :show-close-button="!deleting"
+      :disabled="deleting"
+      content-class="max-w-md"
+    >
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Snapshot: {{ snapshotCamera?.name }}</DialogTitle>
-          <DialogDescription>
-            Snapshot terbaru dari kamera. Gunakan "Ambil Snapshot Baru" untuk memotret ulang.
-          </DialogDescription>
+          <DialogTitle>Hapus Kamera?</DialogTitle>
+          <DialogDescription class="break-words">Kamera "{{ deletingCamera?.name }}" beserta kalibrasi dan job terkait akan dihapus. Tindakan ini tidak dapat dibatalkan.</DialogDescription>
+        </DialogHeader>
+        <div v-if="deleteError" class="error-state" role="alert">
+          <AlertCircle class="w-5 h-5" aria-hidden="true" />
+          <p class="font-medium text-text">Gagal menghapus kamera</p>
+          <p class="text-sm text-text-muted">{{ deleteError }}</p>
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" :disabled="deleting" @click="isDeleteDialogOpen = false">Batal</Button>
+          <Button variant="destructive" :disabled="deleting" :aria-busy="deleting" @click="deleteCamera">
+            {{ deleting ? 'Menghapus kamera...' : 'Hapus Kamera' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Preview Dialog -->
+    <Dialog
+      v-model:open="isPreviewDialogOpen"
+      :show-close-button="!previewLoading"
+      :disabled="previewLoading"
+      content-class="max-w-4xl"
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pratinjau Stream: {{ previewCamera?.name }}</DialogTitle>
+          <DialogDescription>Stream WHEP receive-only. Gunakan tombol Reconnect jika koneksi terputus.</DialogDescription>
         </DialogHeader>
         <div class="space-y-4">
-          <Alert v-if="snapshotError" variant="destructive">
-            <AlertTitle>Gagal memuat snapshot</AlertTitle>
-            <AlertDescription>{{ snapshotError }}</AlertDescription>
-          </Alert>
+          <div v-if="previewLoading" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center">
+            <div class="text-center text-text">
+              <div class="spinner mx-auto mb-3" style="width: 2.5rem; height: 2.5rem; border-width: 3px;" />
+              <p>Memuat stream...</p>
+            </div>
+          </div>
+          <div v-else-if="previewError || !streamState?.whep_url" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center p-4">
+            <div class="text-center text-text">
+              <XCircle class="w-12 h-12 text-negative mx-auto mb-3" aria-hidden="true" />
+              <p class="mb-3">{{ previewError || 'Stream tidak tersedia. Aktifkan stream pada kamera ini.' }}</p>
+              <Button variant="outline" @click="loadStream">Coba Lagi</Button>
+            </div>
+          </div>
+          <WhepPlayer v-else :camera-id="previewCamera!.id" :whep-path="streamState!.whep_url!" :context="apiContext" class="aspect-video" />
+          <div v-if="streamState" class="flex flex-wrap gap-4 text-sm text-text-muted">
+            <span>Status: <span class="text-text capitalize">{{ streamState.status }}</span></span>
+            <span>Synced: <span class="text-text">{{ streamState.synced ? 'Ya' : 'Tidak' }}</span></span>
+            <span>Tracks: <span class="text-text">{{ streamState.tracks.join(', ') || '-' }}</span></span>
+            <span>Checked: <span class="text-text">{{ new Date(streamState.checked_at).toLocaleTimeString() }}</span></span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" @click="isPreviewDialogOpen = false">Tutup</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-          <div v-if="snapshotLoading" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-            <div class="text-center text-white">
-              <div
-                class="animate-spin rounded-full h-10 w-10 border-3 border-primary border-t-transparent mx-auto mb-3" />
+    <!-- Snapshot Dialog -->
+    <Dialog
+      v-model:open="isSnapshotDialogOpen"
+      :show-close-button="!snapshotLoading"
+      :disabled="snapshotLoading"
+      content-class="max-w-2xl"
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Snapshot: {{ snapshotCamera?.name }}</DialogTitle>
+          <DialogDescription>Snapshot terbaru dari kamera. Gunakan "Ambil Snapshot Baru" untuk memotret ulang.</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div v-if="snapshotError" class="error-state" role="alert">
+            <AlertCircle class="w-5 h-5" aria-hidden="true" />
+            <p class="font-medium text-text">Gagal memuat snapshot</p>
+            <p class="text-sm text-text-muted">{{ snapshotError }}</p>
+          </div>
+
+          <div v-if="snapshotLoading" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center">
+            <div class="text-center text-text">
+              <div class="spinner mx-auto mb-3" style="width: 2.5rem; height: 2.5rem; border-width: 3px;" />
               <p>{{ latestSnapshot ? 'Memuat snapshot...' : 'Mengambil snapshot baru...' }}</p>
             </div>
           </div>
 
-          <div v-else-if="snapshotError || !latestSnapshot"
-            class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center p-4">
-            <div class="text-center text-white">
-              <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p class="mb-3">{{ snapshotError || 'Belum ada snapshot. Klik "Ambil Snapshot Baru" untuk memotret.' }}
-              </p>
-              <Button variant="default" @click="takeNewSnapshot">
-                {{ latestSnapshot
-                  ? 'Ambil Snapshot Baru'
-                  : 'AmbilSnapshot' }}
+          <div v-else-if="snapshotError || !latestSnapshot" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center p-4">
+            <div class="text-center text-text">
+              <XCircle class="w-12 h-12 text-negative mx-auto mb-3" aria-hidden="true" />
+              <p class="mb-3">{{ snapshotError || 'Belum ada snapshot. Klik "Ambil Snapshot Baru" untuk memotret.' }}</p>
+              <Button variant="primary" @click="takeNewSnapshot">
+                {{ latestSnapshot ? 'Ambil Snapshot Baru' : 'Ambil Snapshot' }}
               </Button>
             </div>
           </div>
 
           <div v-else class="space-y-4">
             <AuthenticatedArtifact :path="latestSnapshot!.image_url" label="Snapshot" />
-            <div class="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-              <div><span class="text-foreground">Dimensi: </span>{{ latestSnapshot!.width }}x{{ latestSnapshot!.height
-                }}</div>
-              <div><span class="text-foreground">Ukuran: </span>{{ (latestSnapshot!.size_bytes / 1024).toFixed(1) }} KB
-              </div>
-              <div><span class="text-foreground">Diambil: </span>{{ formatDate(latestSnapshot!.captured_at) }}</div>
-              <div><span class="text-foreground">ID: </span><code class="break-all">{{ latestSnapshot!.id }}</code>
-              </div>
+            <div class="grid grid-cols-2 gap-4 text-sm text-text-muted">
+              <div><span class="text-text">Dimensi: </span>{{ latestSnapshot!.width }}×{{ latestSnapshot!.height }}</div>
+              <div><span class="text-text">Ukuran: </span>{{ (latestSnapshot!.size_bytes / 1024).toFixed(1) }} KB</div>
+              <div><span class="text-text">Diambil: </span>{{ formatDate(latestSnapshot!.captured_at) }}</div>
+              <div><span class="text-text">ID: </span><code class="break-all font-mono text-xs">{{ latestSnapshot!.id }}</code></div>
             </div>
             <div class="flex gap-2">
-              <Button variant="default" @click="takeNewSnapshot">Ambil Snapshot Baru</Button>
-              <Button variant="outline" @click="loadLatestSnapshot">Refresh Snapshot</Button>
+              <Button variant="primary" @click="takeNewSnapshot">Ambil Snapshot Baru</Button>
+              <Button variant="outline" @click="loadLatestSnapshot">Refresh</Button>
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="setSnapshotDialogOpen(false)">Tutup</Button>
+          <Button variant="secondary" @click="isSnapshotDialogOpen = false">Tutup</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -344,43 +379,12 @@
 </template>
 
 <script setup lang="ts">
-import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
-import WhepPlayer from '@/components/media/WhepPlayer.vue'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { useConnectionScope } from '@/composables/useConnectionScope'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { useToast } from '@/composables/useToast'
+import { useConnectionScope } from '@/composables/useConnectionScope'
 import { cameraPayload, createCameraForm } from '@/lib/camera-form'
+import { useApiStore } from '@/stores/api'
+import type { Camera, SnapshotResponse, StreamResponse } from '@/types'
 import {
   createCamera as apiCreateCamera,
   deleteCamera as apiDeleteCamera,
@@ -390,15 +394,18 @@ import {
 } from '@/services/cameras'
 import { getLatestSnapshot, takeSnapshot } from '@/services/snapshots'
 import { getStream, updateStream } from '@/services/streams'
-import { useApiStore } from '@/stores/api'
-import type { Camera, SnapshotResponse, StreamResponse } from '@/types'
-import { computed, onMounted, ref } from 'vue'
+import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
+import WhepPlayer from '@/components/media/WhepPlayer.vue'
+
+// UI Components
+import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
+
+import { Video, AlertCircle, CheckCircle, XCircle } from '@lucide/vue'
 
 const apiStore = useApiStore()
 const toast = useToast()
 const isActive = useConnectionScope()
-const view = ref<HTMLElement | null>(null)
-let dialogTrigger: HTMLElement | null = null
+
 const cameras = ref<Camera[]>([])
 const loading = ref(false)
 const loadError = ref('')
@@ -415,37 +422,23 @@ const deleteError = ref('')
 const isRemoveSourceDialogOpen = ref(false)
 const removingSource = ref(false)
 const removeSourceError = ref('')
-let sourceTrigger: HTMLElement | null = null
 
 const isPreviewDialogOpen = ref(false)
 const previewCamera = ref<Camera | null>(null)
 const streamState = ref<StreamResponse | null>(null)
 const previewLoading = ref(false)
 const previewError = ref('')
-let previewTrigger: HTMLElement | null = null
 
 const isSnapshotDialogOpen = ref(false)
 const snapshotCamera = ref<Camera | null>(null)
 const latestSnapshot = ref<SnapshotResponse | null>(null)
 const snapshotLoading = ref(false)
 const snapshotError = ref('')
-let snapshotTrigger: HTMLElement | null = null
 
 const togglingStreamId = ref<string | null>(null)
 
+const hasApiKey = computed(() => apiStore.hasApiKey)
 const apiContext = computed(() => apiStore.connectionContext)
-
-function confirmRemoveSource(event: MouseEvent) {
-  sourceTrigger = event.currentTarget as HTMLElement
-  removeSourceError.value = ''
-  isRemoveSourceDialogOpen.value = true
-}
-
-function restoreSourceFocus(event: Event) {
-  event.preventDefault()
-  const target = sourceTrigger?.isConnected ? sourceTrigger : document.getElementById('camera-rtsp')
-  target?.focus()
-}
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
@@ -454,15 +447,20 @@ function errorMessage(error: unknown): string {
 }
 
 async function fetchCameras() {
-  if (!apiStore.hasApiKey || loading.value) return
+  if (!hasApiKey.value || loading.value) return
   loading.value = true
   loadError.value = ''
   try {
-    const response = await listCameras()
+    const first = await listCameras(1, 100)
+    const items = [...first.items]
+    for (let page = 2; page <= first.total_pages; page += 1) {
+      const next = await listCameras(page, 100)
+      items.push(...next.items)
+    }
     if (!isActive()) return
-    cameras.value = response.items
+    cameras.value = items
     cameraStatuses.value = Object.fromEntries(
-      response.items.map((camera) => [camera.id, 'loading']),
+      items.map((camera) => [camera.id, 'loading']),
     )
   } catch (error: unknown) {
     if (!isActive()) return
@@ -471,8 +469,8 @@ async function fetchCameras() {
     loading.value = false
   }
   if (loadError.value) return
-  for (const camera of cameras.value) {
-    if (!isActive()) return
+
+  await Promise.allSettled(cameras.value.map(async (camera) => {
     try {
       const detail = await getCamera(camera.id)
       if (!isActive()) return
@@ -481,45 +479,41 @@ async function fetchCameras() {
       if (!isActive()) return
       cameraStatuses.value[camera.id] = 'error'
     }
+  }))
+}
+
+function getCalibrationBadgeClass(cameraId: string): string {
+  const status = cameraStatuses.value[cameraId]
+  switch (status) {
+    case 'active': return 'badge-positive'
+    case 'loading': return 'badge-warning'
+    case 'error': return 'badge-negative'
+    default: return 'badge-neutral'
   }
 }
 
-function restoreFocus(event: Event) {
-  event.preventDefault()
-  const target = dialogTrigger?.isConnected
-    ? dialogTrigger
-    : view.value?.querySelector<HTMLElement>('[data-camera-create]')
-  target?.focus()
+function getCalibrationStatusText(cameraId: string): string {
+  const status = cameraStatuses.value[cameraId]
+  switch (status) {
+    case 'active': return 'Kalibrasi aktif'
+    case 'loading': return 'Memeriksa...'
+    case 'error': return 'Gagal diperiksa'
+    default: return 'Belum Dikalibrasi'
+  }
 }
 
-function openCreateDialog(event: MouseEvent) {
-  dialogTrigger = event.currentTarget as HTMLElement
+function openCreateDialog() {
   editingCamera.value = null
   form.value = createCameraForm()
   saveError.value = ''
   isCameraDialogOpen.value = true
 }
 
-function editCamera(camera: Camera, event: MouseEvent) {
-  dialogTrigger = event.currentTarget as HTMLElement
+function editCamera(camera: Camera) {
   editingCamera.value = camera
   form.value = createCameraForm(camera)
   saveError.value = ''
   isCameraDialogOpen.value = true
-}
-
-function setCameraDialogOpen(open: boolean) {
-  if (saving.value || removingSource.value || isRemoveSourceDialogOpen.value) return
-  isCameraDialogOpen.value = open
-  if (!open) {
-    editingCamera.value = null
-    form.value = createCameraForm()
-    saveError.value = ''
-  }
-}
-
-function preventWhileSaving(event: Event) {
-  if (saving.value || removingSource.value || isRemoveSourceDialogOpen.value) event.preventDefault()
 }
 
 async function saveCamera() {
@@ -545,28 +539,19 @@ async function saveCamera() {
   } finally {
     saving.value = false
   }
-  setCameraDialogOpen(false)
+  const editedId = editingCamera.value?.id
+  isCameraDialogOpen.value = false
   await fetchCameras()
-}
-
-function confirmDelete(camera: Camera, event: MouseEvent) {
-  dialogTrigger = event.currentTarget as HTMLElement
-  deletingCamera.value = camera
-  deleteError.value = ''
-  isDeleteDialogOpen.value = true
-}
-
-function setDeleteDialogOpen(open: boolean) {
-  if (deleting.value) return
-  isDeleteDialogOpen.value = open
-  if (!open) {
-    deletingCamera.value = null
-    deleteError.value = ''
+  if (editedId) {
+    await nextTick()
+    document.querySelector<HTMLElement>(`[data-camera-edit="${editedId}"]`)?.focus()
   }
 }
 
-function preventWhileDeleting(event: Event) {
-  if (deleting.value) event.preventDefault()
+function confirmDelete(camera: Camera) {
+  deletingCamera.value = camera
+  deleteError.value = ''
+  isDeleteDialogOpen.value = true
 }
 
 async function deleteCamera() {
@@ -585,9 +570,15 @@ async function deleteCamera() {
   } finally {
     deleting.value = false
   }
-  dialogTrigger = null
-  setDeleteDialogOpen(false)
+  isDeleteDialogOpen.value = false
   await fetchCameras()
+  await nextTick()
+  document.querySelector<HTMLElement>('[data-camera-create]')?.focus()
+}
+
+function confirmRemoveSource() {
+  removeSourceError.value = ''
+  isRemoveSourceDialogOpen.value = true
 }
 
 async function removeSource() {
@@ -601,6 +592,8 @@ async function removeSource() {
     form.value.rtsp_url = ''
     cameras.value = cameras.value.map(item => item.id === camera.id ? camera : item)
     isRemoveSourceDialogOpen.value = false
+    await nextTick()
+    document.querySelector<HTMLElement>('[data-hapus-sumber]')?.focus() || document.getElementById('camera-rtsp')?.focus()
     toast.success('Sumber RTSP dihapus')
   } catch (error) {
     if (isActive()) removeSourceError.value = errorMessage(error)
@@ -622,29 +615,12 @@ async function loadStream() {
   }
 }
 
-function openPreview(camera: Camera, event: MouseEvent) {
-  previewTrigger = event.currentTarget as HTMLElement
+function openPreview(camera: Camera) {
   previewCamera.value = camera
   streamState.value = null
   previewError.value = ''
   isPreviewDialogOpen.value = true
   loadStream()
-}
-
-function setPreviewDialogOpen(open: boolean) {
-  if (previewLoading.value) return
-  isPreviewDialogOpen.value = open
-  if (!open) {
-    previewCamera.value = null
-    streamState.value = null
-    previewError.value = ''
-  }
-}
-
-function restorePreviewFocus(event: Event) {
-  event.preventDefault()
-  const target = previewTrigger?.isConnected ? previewTrigger : view.value?.querySelector<HTMLElement>('[data-camera-create]')
-  target?.focus()
 }
 
 async function loadLatestSnapshot() {
@@ -675,29 +651,12 @@ async function takeNewSnapshot() {
   }
 }
 
-function openSnapshot(camera: Camera, event: MouseEvent) {
-  snapshotTrigger = event.currentTarget as HTMLElement
+function openSnapshot(camera: Camera) {
   snapshotCamera.value = camera
   latestSnapshot.value = null
   snapshotError.value = ''
   isSnapshotDialogOpen.value = true
   loadLatestSnapshot()
-}
-
-function setSnapshotDialogOpen(open: boolean) {
-  if (snapshotLoading.value) return
-  isSnapshotDialogOpen.value = open
-  if (!open) {
-    snapshotCamera.value = null
-    latestSnapshot.value = null
-    snapshotError.value = ''
-  }
-}
-
-function restoreSnapshotFocus(event: Event) {
-  event.preventDefault()
-  const target = snapshotTrigger?.isConnected ? snapshotTrigger : view.value?.querySelector<HTMLElement>('[data-camera-create]')
-  target?.focus()
 }
 
 async function toggleStream(camera: Camera) {
@@ -717,7 +676,10 @@ async function toggleStream(camera: Camera) {
 }
 
 function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(dateString).toLocaleString('id-ID', { 
+    year: 'numeric', month: 'short', day: 'numeric', 
+    hour: '2-digit', minute: '2-digit', second: '2-digit' 
+  })
 }
 
 onMounted(fetchCameras)

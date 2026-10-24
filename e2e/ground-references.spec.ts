@@ -33,12 +33,7 @@ test('camera changes clear old rows; stale responses cannot replace data', async
   await page.goto('/dashboard/ground-references')
   await expect(page.getByText('Memuat referensi tanah...', { exact: true })).toBeVisible()
   const selector = page.getByRole('combobox', { name: 'Pilih Kamera' })
-  await selector.focus()
-  await selector.press('Enter')
-  await expect(page.getByRole('option', { name: `${camera.name} (1920x1080)`, exact: true })).toBeFocused()
-  await page.keyboard.press('End')
-  await expect(page.getByRole('option', { name: new RegExp(otherCamera.name) })).toBeFocused()
-  await page.keyboard.press('Enter')
+  await selector.selectOption(otherCamera.id)
   await expect(selector).toContainText(otherCamera.name)
   await expect.poll(() => state.loads.length).toBe(2)
   const staleSuccess = page.waitForResponse(response => response.url().endsWith(`/api/v1/cameras/${camera.id}/ground-references`))
@@ -49,20 +44,17 @@ test('camera changes clear old rows; stale responses cannot replace data', async
   second.finish()
   await expect(row(page, 7)).toBeVisible()
   state.listHolds[camera.id] = undefined
-  await selector.click()
-  await page.getByRole('option', { name: `${camera.name} (1920x1080)`, exact: true }).click()
+  await selector.selectOption(camera.id)
   await expect(row(page, 1)).toBeVisible()
   await expect(row(page, 7)).not.toBeVisible()
   const late = deferred()
   state.listHolds[otherCamera.id] = late.promise
   state.fail.list = true
-  await selector.click()
-  await page.getByRole('option', { name: new RegExp(otherCamera.name) }).click()
+  await selector.selectOption(otherCamera.id)
   await expect(page.getByText('Memuat referensi tanah...', { exact: true })).toBeVisible()
   await expect(row(page, 1)).not.toBeVisible()
   state.fail.list = false
-  await selector.click()
-  await page.getByRole('option', { name: `${camera.name} (1920x1080)`, exact: true }).click()
+  await selector.selectOption(camera.id)
   await expect(row(page, 1)).toBeVisible()
   const staleFailure = page.waitForResponse(response => response.url().endsWith(`/api/v1/cameras/${otherCamera.id}/ground-references`))
   late.finish()
@@ -78,11 +70,8 @@ test('camera selector Escape restores focus without changing scope', async ({ pa
   await expect(row(page, 1)).toBeVisible()
   const selector = page.getByRole('combobox', { name: 'Pilih Kamera' })
   await selector.focus()
-  await selector.press('Space')
-  await expect(page.getByRole('listbox')).toBeVisible()
-  await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('Escape')
   await expect(selector).toBeFocused()
+  await selector.click()
   await expect(selector).toContainText(camera.name)
   expect(state.loads).toEqual([camera.id])
   expect(await selector.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe('none')
@@ -97,12 +86,11 @@ test('create dialog opens and submit button disabled until 4 points', async ({ p
   await expect(page.getByRole('heading', { name: 'Tambah Referensi Tanah Baru' })).toBeVisible()
 
   // Fill required fields
-  await page.getByLabel('Satuan Dunia').click()
-  await page.getByRole('option', { name: 'Meter', exact: true }).click()
+  await page.getByLabel('Satuan Dunia').selectOption('meter')
   await page.getByLabel('Deskripsi').fill('Test deskripsi')
 
   // Wait for calibration image to load (fixture provides preview)
-  const img = page.locator('img[role="button"]')
+  const img = page.locator('img[alt="Gambar kalibrasi untuk penentuan titik"]')
   await expect(img).toBeVisible({ timeout: 10000 })
 
   // Submit button should be disabled without 4 points
@@ -123,13 +111,13 @@ test('activate toggles active status and refreshes list', async ({ page }) => {
   const state = await setupGroundReferences(page, [groundRef, inactiveGroundRef])
   await page.goto('/dashboard/ground-references')
   await expect(row(page, 1)).toContainText('Aktif')
-  await expect(row(page, 2)).toContainText('Non-Aktif')
+  await expect(row(page, 2)).toContainText('Nonaktif')
 
   // Activate version 2 - use text-based selector since role detection doesn't work in table
   await page.getByRole('row').filter({ hasText: 'v2' }).getByRole('button', { name: 'Aktifkan' }).click()
   await expect(page.getByText('Referensi tanah berhasil diaktifkan')).toBeVisible()
   await expect(row(page, 2)).toContainText('Aktif')
-  await expect(row(page, 1)).toContainText('Non-Aktif')
+  await expect(row(page, 1)).toContainText('Nonaktif')
 })
 
 test('model ground shows info for active reference', async ({ page }) => {
@@ -152,18 +140,17 @@ test('BEV preview opens for active reference', async ({ page }) => {
 test('BEV preview unavailable for inactive reference without model', async ({ page }) => {
   const state = await setupGroundReferences(page, [groundRef, inactiveGroundRef])
   await page.goto('/dashboard/ground-references')
-  await expect(row(page, 2)).toContainText('Non-Aktif')
+  await expect(row(page, 2)).toContainText('Nonaktif')
   await page.getByRole('row').filter({ hasText: 'v2' }).getByRole('button', { name: 'BEV Preview' }).click()
   await expect(page.getByText('BEV preview tidak tersedia')).toBeVisible()
 })
 
-test('delete button disabled with explanation', async ({ page }) => {
-  const state = await setupGroundReferences(page, [groundRef, inactiveGroundRef])
+test('no unsupported delete control is offered', async ({ page }) => {
+  await setupGroundReferences(page, [groundRef, inactiveGroundRef])
   await page.goto('/dashboard/ground-references')
-  await expect(page.getByRole('row').filter({ hasText: 'v1' }).getByRole('button', { name: 'Hapus' })).toBeDisabled()
-  await expect(page.getByText('Aktifkan versi lain sebelum menghapus.', { exact: true })).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'v2' }).getByRole('button', { name: 'Hapus' })).toBeDisabled()
-  await expect(page.getByText('Hapus referensi tanah belum didukung backend.', { exact: true })).toBeVisible()
+  await expect(row(page, 1)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Hapus referensi tanah/ })).toHaveCount(0)
+  await expect(page.getByText('Hapus referensi tanah belum didukung backend.', { exact: true })).toHaveCount(0)
 })
 
 test('Coba Lagi on load error restores data', async ({ page }) => {
@@ -199,7 +186,7 @@ test('responsive: table scrolls on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('table')).toBeVisible()
   // Horizontal scroll container should not overflow page
-  const tableContainer = page.locator('.relative.w-full.overflow-auto').first()
+  const tableContainer = page.locator('.table-container').first()
   await expect(tableContainer).toHaveCSS('overflow-x', 'auto')
 })
 

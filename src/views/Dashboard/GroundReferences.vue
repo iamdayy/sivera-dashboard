@@ -1,127 +1,174 @@
 <template>
-  <div ref="view" class="min-w-0 space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <h1 class="text-2xl font-bold">Referensi Tanah</h1>
-      <Button data-ground-ref-create :disabled="!selectedCameraId || !apiStore.hasApiKey || busy" @click="openCreateDialog">
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <h1 class="text-2xl font-bold text-text">Referensi Tanah</h1>
+      <Button 
+        variant="primary" 
+        :disabled="!selectedCameraId || !hasApiKey || busy" 
+        @click="openCreateDialog"
+        data-ground-ref-create
+      >
+        <MapPin class="w-4 h-4" aria-hidden="true" />
         Tambah Referensi Baru
       </Button>
     </div>
 
-    <Alert v-if="!apiStore.hasApiKey">
-      <AlertTitle>API Key belum diatur</AlertTitle>
-      <AlertDescription>
-        Atur akses API sebelum memuat kamera dan referensi tanah.
-        <RouterLink to="/dashboard/settings" class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">Buka Pengaturan</RouterLink>
-      </AlertDescription>
-    </Alert>
+    <div v-if="!hasApiKey" class="card border-warning-border bg-warning-bg/50">
+      <div class="flex items-start gap-3">
+        <AlertCircle class="w-5 h-5 text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div class="flex-1">
+          <p class="font-medium text-text">API Key belum diatur</p>
+          <p class="text-sm text-text-muted mt-1">
+            Atur akses API sebelum memuat kamera dan referensi tanah.
+            <RouterLink to="/dashboard/settings" class="text-brand underline ml-1">Buka Pengaturan</RouterLink>
+          </p>
+        </div>
+      </div>
+    </div>
 
-    <Card class="min-w-0 gap-0 py-4">
-      <CardContent class="space-y-2 px-4">
-        <Label for="ground-ref-camera">Pilih Kamera</Label>
-        <Select v-model="selectedCameraId" :disabled="!apiStore.hasApiKey || cameraLoading || !cameras.length || busy || isCreateDialogOpen">
-          <SelectTrigger id="ground-ref-camera" class="md:max-w-lg" aria-describedby="ground-ref-camera-help">
-            <SelectValue placeholder="Pilih kamera" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="cam in cameras" :key="cam.id" :value="cam.id">
-              {{ cam.name }} ({{ cam.resolution_w }}x{{ cam.resolution_h }})
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <p id="ground-ref-camera-help" class="break-words text-sm text-muted-foreground">
-          {{ selectedCamera ? `Referensi tanah untuk ${selectedCamera.name}.` : 'Pilih kamera sebelum membuat referensi tanah.' }}
-        </p>
-        <p v-if="cameraLoading" role="status" class="text-sm text-muted-foreground">Memuat data kamera...</p>
-        <Alert v-else-if="cameraError" variant="destructive">
-          <AlertTitle>Gagal memuat data kamera</AlertTitle>
-          <AlertDescription>
-            <p>{{ cameraError }}</p>
-            <Button variant="outline" class="mt-2 w-fit text-foreground" @click="fetchCameras">Coba Lagi</Button>
-          </AlertDescription>
-        </Alert>
-        <p v-else-if="apiStore.hasApiKey && !cameras.length" class="text-sm text-muted-foreground">
-          Belum ada kamera terdaftar.
-          <RouterLink to="/dashboard/cameras" class="inline-flex min-h-11 items-center text-primary underline underline-offset-4">Buka Manajemen Kamera</RouterLink>
-        </p>
-      </CardContent>
-    </Card>
+    <!-- Camera Selector Card -->
+    <div v-else class="card">
+      <Label for="ground-ref-camera" class="label">Pilih Kamera</Label>
+      <select
+        id="ground-ref-camera"
+        v-model="selectedCameraId"
+        :disabled="!hasApiKey || cameraLoading || !cameras.length || busy || isCreateDialogOpen"
+        class="input"
+        aria-describedby="ground-ref-camera-help"
+      >
+        <option value="" disabled>Pilih kamera</option>
+        <option v-for="cam in cameras" :key="cam.id" :value="cam.id">
+          {{ cam.name }} ({{ cam.resolution_w }}×{{ cam.resolution_h }})
+        </option>
+      </select>
+      <p id="ground-ref-camera-help" class="text-sm text-text-muted mt-1 break-words">
+        {{ selectedCamera ? `Referensi tanah untuk ${selectedCamera.name}.` : 'Pilih kamera sebelum membuat referensi tanah.' }}
+      </p>
+      <div v-if="cameraLoading" class="loading-state mt-2" role="status">
+        <div class="spinner" aria-hidden="true" />
+        Memuat data kamera...
+      </div>
+      <div v-else-if="cameraError" class="error-state mt-2" role="alert">
+        <AlertCircle class="w-5 h-5" aria-hidden="true" />
+        <p class="font-medium text-text">Gagal memuat data kamera</p>
+        <p class="text-sm text-text-muted">{{ cameraError }}</p>
+        <Button variant="outline" @click="fetchCameras" class="btn-sm mt-2">Coba Lagi</Button>
+      </div>
+      <p v-else-if="hasApiKey && !cameras.length" class="text-sm text-text-muted mt-2">
+        Belum ada kamera terdaftar.
+        <RouterLink to="/dashboard/cameras" class="text-brand underline ml-1">Buka Manajemen Kamera</RouterLink>
+      </p>
+    </div>
 
-    <Alert v-if="actionError" variant="destructive">
-      <AlertTitle>{{ actionError.title }}</AlertTitle>
-      <AlertDescription>{{ actionError.message }}</AlertDescription>
-    </Alert>
+    <!-- Action Error Alert -->
+    <div v-if="actionError" class="error-state" role="alert">
+      <AlertCircle class="w-5 h-5" aria-hidden="true" />
+      <p class="font-medium text-text">{{ actionError.title }}</p>
+      <p class="text-sm text-text-muted">{{ actionError.message }}</p>
+    </div>
 
-    <Card class="min-w-0 gap-0 py-0">
-      <CardContent class="min-w-0 p-0">
-        <Table aria-label="Daftar referensi tanah">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Versi</TableHead>
-              <TableHead class="text-right">Jumlah Titik</TableHead>
-              <TableHead>Satuan</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Deskripsi</TableHead>
-              <TableHead>Dibuat</TableHead>
-              <TableHead>Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow v-if="loading">
-              <TableCell colspan="7">
-                <div role="status" class="space-y-3">
-                  <p class="text-muted-foreground">Memuat referensi tanah...</p>
-                  <Skeleton class="h-5 w-full" />
+    <!-- Ground References Table -->
+    <div class="card overflow-hidden">
+      <div class="table-container">
+        <table class="table" aria-label="Daftar referensi tanah">
+          <thead>
+            <tr>
+              <th scope="col">Versi</th>
+              <th scope="col" class="numeric">Jumlah Titik</th>
+              <th scope="col">Satuan</th>
+              <th scope="col">Status</th>
+              <th scope="col">Deskripsi</th>
+              <th scope="col">Dibuat</th>
+              <th scope="col">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td colspan="7">
+                <div class="loading-state" role="status">
+                  <div class="spinner" aria-hidden="true" />
+                  Memuat referensi tanah...
                 </div>
-              </TableCell>
-            </TableRow>
-            <TableRow v-else-if="loadError">
-              <TableCell colspan="7" class="whitespace-normal">
-                <Alert variant="destructive">
-                  <AlertTitle>Gagal memuat referensi tanah</AlertTitle>
-                  <AlertDescription>
-                    <p>{{ loadError }}</p>
-                    <Button variant="outline" class="mt-2 w-fit text-foreground" @click="fetchGroundReferences">Coba Lagi</Button>
-                  </AlertDescription>
-                </Alert>
-              </TableCell>
-            </TableRow>
+              </td>
+            </tr>
+            <tr v-else-if="loadError">
+              <td colspan="7">
+                <div class="error-state" role="alert">
+                  <AlertCircle class="w-5 h-5" aria-hidden="true" />
+                  <p class="font-medium text-text">Gagal memuat referensi tanah</p>
+                  <p class="text-sm text-text-muted">{{ loadError }}</p>
+                  <Button variant="outline" @click="fetchGroundReferences" class="btn-sm mt-2">Coba Lagi</Button>
+                </div>
+              </td>
+            </tr>
             <template v-else>
-              <TableRow v-for="ref in groundReferences" :key="ref.id">
-                <TableCell class="font-medium tabular-nums">v{{ ref.version }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ ref.image_points?.length || 0 }} titik</TableCell>
-                <TableCell class="text-muted-foreground">{{ ref.world_units }}</TableCell>
-                <TableCell><Badge :variant="ref.is_active ? 'default' : 'secondary'">{{ ref.is_active ? 'Aktif' : 'Non-Aktif' }}</Badge></TableCell>
-                <TableCell class="text-muted-foreground max-w-xs truncate">{{ ref.description || '-' }}</TableCell>
-                <TableCell class="text-muted-foreground">{{ formatDate(ref.created_at) }}</TableCell>
-                <TableCell>
-                  <div class="flex gap-2">
-                    <Button v-if="!ref.is_active" variant="ghost" :disabled="busy" :aria-busy="activatingId === ref.id" :aria-label="`Aktifkan referensi tanah v${ref.version}`" @click="activateReference(ref)">
+              <tr v-for="ref in groundReferences" :key="ref.id">
+                <td class="font-mono tabular-nums">v{{ ref.version }}</td>
+                <td class="numeric tabular-nums">{{ ref.image_points?.length || 0 }} titik</td>
+                <td class="text-text-muted">{{ ref.world_units }}</td>
+                <td>
+                  <Badge :class="ref.is_active ? 'badge-positive' : 'badge-neutral'">
+                    {{ ref.is_active ? 'Aktif' : 'Nonaktif' }}
+                  </Badge>
+                </td>
+                <td class="text-text-muted max-w-xs truncate">{{ ref.description || '-' }}</td>
+                <td class="text-text-muted">{{ formatDate(ref.created_at) }}</td>
+                <td>
+                  <div class="flex flex-wrap gap-2">
+                    <Button 
+                      v-if="!ref.is_active" 
+                      variant="ghost" 
+                      size="sm"
+                      :disabled="busy" 
+                      :aria-busy="activatingId === ref.id" 
+                      :aria-label="`Aktifkan referensi tanah v${ref.version}`" 
+                      @click="activateReference(ref)"
+                    >
                       {{ activatingId === ref.id ? 'Mengaktifkan...' : 'Aktifkan' }}
                     </Button>
-                    <Button variant="ghost" :disabled="busy || !hasGroundModel(ref)" :aria-busy="viewingModelId === ref.id" :aria-label="`Lihat model ground v${ref.version}`" @click="viewGroundModel(ref)">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      :disabled="busy" 
+                      :aria-busy="viewingModelId === ref.id" 
+                      :aria-label="`Lihat model ground v${ref.version}`" 
+                      @click="viewGroundModel(ref)"
+                    >
                       {{ viewingModelId === ref.id ? 'Memuat model...' : 'Model Ground' }}
                     </Button>
-                    <Button variant="ghost" :disabled="busy || !hasGroundModel(ref)" :aria-busy="viewingBevId === ref.id" :aria-label="`BEV preview v${ref.version}`" @click="viewBevPreview(ref)">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      :disabled="busy" 
+                      :aria-busy="viewingBevId === ref.id" 
+                      :aria-label="`BEV preview v${ref.version}`" 
+                      @click="viewBevPreview(ref)"
+                    >
                       {{ viewingBevId === ref.id ? 'Memuat preview...' : 'BEV Preview' }}
                     </Button>
-                    <Button variant="ghost" class="text-destructive hover:text-destructive" :disabled="true" :aria-describedby="`ground-ref-delete-help-${ref.id}`" :aria-label="`Hapus referensi tanah v${ref.version}`">Hapus</Button>
                   </div>
-                  <p :id="`ground-ref-delete-help-${ref.id}`" class="mt-1 text-xs text-muted-foreground">{{ ref.is_active ? 'Aktifkan versi lain sebelum menghapus.' : 'Hapus referensi tanah belum didukung backend.' }}</p>
-                </TableCell>
-              </TableRow>
-              <TableRow v-if="!groundReferences.length">
-                <TableCell colspan="7" class="py-8 text-center whitespace-normal text-muted-foreground">
+                </td>
+              </tr>
+              <tr v-if="!groundReferences.length">
+                <td colspan="7" class="py-8 text-center text-text-muted">
                   {{ selectedCameraId ? 'Belum ada referensi tanah untuk kamera ini. Klik "Tambah Referensi Baru" untuk memulai.' : 'Pilih kamera terlebih dahulu untuk melihat referensi tanahnya.' }}
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             </template>
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-    <Dialog :open="isCreateDialogOpen" @update:open="setCreateDialogOpen">
-      <DialogContent class="max-w-4xl" :show-close-button="!saving" @close-auto-focus="restoreFocus" @escape-key-down="preventWhileSaving" @interact-outside="preventWhileSaving">
+    <!-- Create Ground Reference Dialog -->
+    <Dialog
+      :open="isCreateDialogOpen"
+      :show-close-button="!saving"
+      :disabled="saving"
+      content-class="max-w-4xl"
+      @update:open="setCreateDialogOpen"
+    >
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Tambah Referensi Tanah Baru</DialogTitle>
           <DialogDescription class="break-words">Tentukan pasangan titik image-dunia untuk {{ selectedCamera?.name }}.</DialogDescription>
@@ -131,90 +178,139 @@
             <div class="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2">
               <div class="space-y-2">
                 <Label for="ground-ref-units">Satuan Dunia</Label>
-                <Select v-model="refForm.world_units" :disabled="saving">
-                  <SelectTrigger id="ground-ref-units">
-                    <SelectValue placeholder="Pilih satuan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="meter">Meter</SelectItem>
-                    <SelectItem value="metre">Metre</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select
+                  id="ground-ref-units"
+                  v-model="refForm.world_units"
+                  :disabled="saving"
+                  class="input"
+                >
+                  <option value="meter">Meter</option>
+                  <option value="metre">Metre</option>
+                </select>
               </div>
               <div class="space-y-2">
                 <Label for="ground-ref-desc">Deskripsi</Label>
-                <Textarea id="ground-ref-desc" v-model="refForm.description" rows="3" placeholder="Catatan opsional tentang referensi ini..." />
+                <textarea id="ground-ref-desc" v-model="refForm.description" rows="3" placeholder="Catatan opsional tentang referensi ini..." class="input min-h-[80px] resize-y" />
               </div>
             </div>
 
             <!-- Calibration Image for Point Picking -->
-            <div v-if="calibImageUrl" class="space-y-3 border border-border rounded-lg p-4">
-              <p class="text-sm font-medium">Klik pada gambar untuk memilih titik image (u,v):</p>
-              <div class="relative inline-block">
-                <img ref="calibImageRef" :src="calibImageUrl" @click="pickImagePoint" tabindex="0" class="max-w-full h-auto cursor-crosshair border border-border" role="button" aria-label="Gambar kalibrasi untuk penentuan titik" />
-                <div v-for="(pt, idx) in imagePoints" :key="idx" class="absolute w-3 h-3 bg-primary rounded-full -translate-x-1/2 -translate-y-1/2 border-2 border-background" :style="{ left: pt.u + 'px', top: pt.v + 'px' }" aria-hidden="true">
-                  <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-primary">{{ idx + 1 }}</span>
+            <div v-if="calibImageUrl" class="space-y-3 border border-sheet-border rounded-lg p-4">
+              <p class="text-sm font-medium text-text">Klik pada gambar untuk memilih titik image (u,v):</p>
+              <div class="relative inline-block max-w-full">
+                <img 
+                  ref="calibImageRef" 
+                  :src="calibImageUrl" 
+                  @click="pickImagePoint" 
+                  class="max-w-full h-auto cursor-crosshair border border-sheet-border" 
+                  alt="Gambar kalibrasi untuk penentuan titik"
+                />
+                <div 
+                  v-for="(pt, idx) in imagePoints" 
+                  :key="idx" 
+                  class="absolute w-3 h-3 bg-brand rounded-full -translate-x-1/2 -translate-y-1/2 border-2 border-sheet" 
+                  :style="pointStyle(pt)" 
+                  aria-hidden="true"
+                >
+                  <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-brand">{{ idx + 1 }}</span>
                 </div>
               </div>
-              <p class="text-xs text-muted-foreground">{{ imagePoints.length }} titik dipilih (minimal 4)</p>
+              <p class="text-xs text-text-muted">{{ imagePoints.length }} titik dipilih (minimal 4). Koordinat memakai piksel gambar asli.</p>
             </div>
-            <div v-else class="text-center text-muted-foreground py-4">
+            <div v-else-if="calibImageState === 'loading'" class="py-4 text-center text-text-muted" role="status">
+              <div class="spinner mx-auto mb-2" aria-hidden="true" />
               Memuat gambar kalibrasi...
+            </div>
+            <div v-else-if="calibImageState === 'missing'" class="rounded-lg border border-warning-border bg-warning-bg/40 p-4 text-sm text-text-muted">
+              Kamera ini belum memiliki kalibrasi aktif, jadi gambar titik tidak tersedia. Aktifkan kalibrasi terlebih dahulu.
+              <RouterLink :to="{ path: '/dashboard/calibrations', query: { camera: selectedCameraId } }" class="ml-1 text-brand underline">Buka Kalibrasi</RouterLink>
+            </div>
+            <div v-else-if="calibImageState === 'error'" class="rounded-lg border border-negative-border bg-negative-bg/40 p-4 text-sm text-text-muted" role="alert">
+              Gambar kalibrasi tidak dapat dimuat.
+              <button type="button" class="ml-1 text-brand underline" @click="loadCalibrationPreview">Coba Lagi</button>
             </div>
 
             <!-- Point Pairs Table -->
-            <div v-if="imagePoints.length > 0" class="space-y-3 border-t pt-4">
+            <div v-if="imagePoints.length > 0" class="space-y-3 border-t border-sheet-border pt-4">
               <div class="flex items-center justify-between">
-                <h4 class="text-sm font-medium">Pasangan Titik (Image ↔ Dunia)</h4>
-                <p class="text-xs text-muted-foreground">Klik gambar di atas untuk menambah titik. Koordinat dunia diisi di tabel.</p>
+                <h4 class="text-sm font-medium text-text">Pasangan Titik (Image ↔ Dunia)</h4>
+                <p class="text-xs text-text-muted">Klik gambar di atas untuk menambah titik. Koordinat dunia diisi di tabel.</p>
               </div>
-              <Table aria-label="Pasangan titik image-dunia">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead class="w-12">#</TableHead>
-                    <TableHead>Image (u, v)</TableHead>
-                    <TableHead class="w-80">Dunia (X, Y) [{{ refForm.world_units }}]</TableHead>
-                    <TableHead class="w-12">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow v-for="(pt, idx) in imagePoints" :key="idx">
-                    <TableCell class="font-medium tabular-nums">{{ idx + 1 }}</TableCell>
-                    <TableCell class="font-mono text-muted-foreground">{{ pt.u.toFixed(1) }}, {{ pt.v.toFixed(1) }}</TableCell>
-                    <TableCell>
-                      <div class="flex gap-2">
-                        <div class="space-y-1 w-32">
-                          <Label :for="`world-x-${idx}`" class="sr-only">X</Label>
-                          <Input :id="`world-x-${idx}`" v-model="getWorldPoint(idx).x" type="number" step="0.01" placeholder="X" :disabled="saving" />
+              <div class="table-container">
+                <table class="table" aria-label="Pasangan titik image-dunia">
+                  <thead>
+                    <tr>
+                      <th scope="col" class="w-12">#</th>
+                      <th scope="col">Image (u, v)</th>
+                      <th scope="col" class="w-80">Dunia (X, Y) [{{ refForm.world_units }}]</th>
+                      <th scope="col" class="w-12">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(pt, idx) in imagePoints" :key="idx">
+                      <td class="font-mono tabular-nums">{{ idx + 1 }}</td>
+                      <td class="font-mono text-text-muted">{{ pt.u.toFixed(1) }}, {{ pt.v.toFixed(1) }}</td>
+                      <td>
+                        <div class="flex gap-2">
+                          <div class="space-y-1 w-32">
+                            <Label :for="`world-x-${idx}`" class="sr-only">X</Label>
+                            <Input 
+                              :id="`world-x-${idx}`" 
+                              v-model="getWorldPoint(idx).x" 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="X" 
+                              :disabled="saving" 
+                              class="input"
+                            />
+                          </div>
+                          <div class="space-y-1 w-32">
+                            <Label :for="`world-y-${idx}`" class="sr-only">Y</Label>
+                            <Input 
+                              :id="`world-y-${idx}`" 
+                              v-model="getWorldPoint(idx).y" 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="Y" 
+                              :disabled="saving" 
+                              class="input"
+                            />
+                          </div>
                         </div>
-                        <div class="space-y-1 w-32">
-                          <Label :for="`world-y-${idx}`" class="sr-only">Y</Label>
-                          <Input :id="`world-y-${idx}`" v-model="getWorldPoint(idx).y" type="number" step="0.01" placeholder="Y" :disabled="saving" />
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" :disabled="saving || imagePoints.length <= 4" :aria-label="`Hapus titik ${idx + 1}`" @click="removeImagePoint(idx)">
-                        <X class="h-4 w-4" aria-hidden="true" />
-                        <span class="sr-only">Hapus titik</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+                      </td>
+                      <td>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          class="p-2"
+                          :disabled="saving || imagePoints.length <= 4" 
+                          :aria-label="`Hapus titik ${idx + 1}`" 
+                          @click="removeImagePoint(idx)"
+                        >
+                          <X class="h-4 w-4" aria-hidden="true" />
+                          <span class="sr-only">Hapus titik</span>
+                        </Button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <p v-if="imagePoints.length > 0 && imagePoints.length < 4" class="text-amber-600 text-sm" role="status">
+            <p v-if="imagePoints.length > 0 && imagePoints.length < 4" class="text-warning text-sm" role="status">
               Minimal 4 titik diperlukan (saat ini: {{ imagePoints.length }})
             </p>
           </fieldset>
-          <Alert v-if="saveError" variant="destructive">
-            <AlertTitle>Gagal membuat referensi tanah</AlertTitle>
-            <AlertDescription>{{ saveError }}</AlertDescription>
-          </Alert>
+          <div v-if="saveError" class="error-state" role="alert">
+            <AlertCircle class="w-5 h-5" aria-hidden="true" />
+            <p class="font-medium text-text">Gagal membuat referensi tanah</p>
+            <p class="text-sm text-text-muted">{{ saveError }}</p>
+          </div>
           <DialogFooter>
-            <Button variant="outline" :disabled="saving" @click="setCreateDialogOpen(false)">Batal</Button>
-            <Button type="submit" :disabled="saving || imagePoints.length < 4 || !worldPointsValid" :aria-busy="saving">{{ saving ? 'Menyimpan...' : 'Simpan Referensi' }}</Button>
+            <Button type="button" variant="secondary" :disabled="saving" @click="setCreateDialogOpen(false)">Batal</Button>
+            <Button type="submit" :disabled="saving || imagePoints.length < 4 || !worldPointsValid" :aria-busy="saving" variant="primary">
+              {{ saving ? 'Menyimpan...' : 'Simpan Referensi' }}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -224,35 +320,36 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { X } from '@lucide/vue'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import { useObjectUrl } from '@/composables/useObjectUrl'
 import { useConnectionScope } from '@/composables/useConnectionScope'
-import { fetchArtifactBlob, requireImageBlob } from '@/services/artifacts'
 import { useApiStore } from '@/stores/api'
+import { fetchArtifactBlob, requireImageBlob } from '@/services/artifacts'
 import { listCameras } from '@/services/cameras'
-import { listGroundReferences, createGroundReference as apiCreateGroundReference, activateGroundReference as apiActivateGroundReference, getActiveGroundModel as apiGetActiveGroundModel, getGroundModelByRef as apiGetGroundModelByRef, getBEVPreview as apiGetBEVPreview } from '@/services/groundReferences'
+import { 
+  listGroundReferences, 
+  createGroundReference as apiCreateGroundReference, 
+  activateGroundReference as apiActivateGroundReference, 
+  getActiveGroundModel as apiGetActiveGroundModel, 
+  getGroundModelByRef as apiGetGroundModelByRef, 
+  getBEVPreview as apiGetBEVPreview 
+} from '@/services/groundReferences'
 import { getUndistortPreview as apiGetUndistortPreview, getActiveCalibration as apiGetActiveCalibration } from '@/services/calibrations'
 import type { Camera, GroundReference } from '@/types'
 import type { GroundModel } from '@/services/groundReferences'
 
+// UI Components
+import { Button, Input, Textarea, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
+
+import { MapPin, AlertCircle, X } from '@lucide/vue'
+
 const apiStore = useApiStore()
 const toast = useToast()
 const isActive = useConnectionScope()
-const view = ref<HTMLElement | null>(null)
+const route = useRoute()
+const router = useRouter()
 const calibImageRef = ref<HTMLImageElement | null>(null)
-let dialogTrigger: HTMLElement | null = null
 
 const cameras = ref<Camera[]>([])
 const selectedCameraId = ref('')
@@ -272,13 +369,15 @@ const refForm = ref({
 const { url: calibImageUrl, replace: replaceCalibPreview, clear: clearCalibPreview } = useObjectUrl()
 const { replace: replaceBevPreview, clear: clearBevPreview } = useObjectUrl()
 let previewVersion = 0
+const calibImageState = ref<'idle' | 'loading' | 'ready' | 'missing' | 'error'>('idle')
 const imagePoints = ref<Array<{ u: number; v: number }>>([])
-const worldPoints = ref<Array<{ x: number; y: number }>>([])
+const worldPoints = ref<Array<{ x: string; y: string }>>([])
 const saveError = ref('')
 const activatingId = ref('')
 const viewingModelId = ref('')
 const viewingBevId = ref('')
 const actionError = ref<{ title: string; message: string } | null>(null)
+const hasApiKey = computed(() => apiStore.hasApiKey)
 const busy = computed(() => saving.value || !!activatingId.value || !!viewingModelId.value || !!viewingBevId.value)
 
 function errorMessage(error: unknown): string {
@@ -287,16 +386,25 @@ function errorMessage(error: unknown): string {
 }
 
 const worldPointsValid = computed(() => {
-  return worldPoints.value.every(p => p.x !== undefined && p.y !== undefined && !isNaN(p.x) && !isNaN(p.y))
+  return worldPoints.value.every(point => {
+    const x = point.x.trim()
+    const y = point.y.trim()
+    return x !== '' && y !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y))
+  })
 })
 
 function getWorldPoint(idx: number) {
-  return worldPoints.value[idx] ?? { x: 0, y: 0 }
+  return worldPoints.value[idx] ?? { x: '', y: '' }
 }
 
-function hasGroundModel(ref: GroundReference): boolean {
-  // We can't know without fetching; enable and let the service return 404 if none
-  return true
+function pointStyle(point: { u: number; v: number }) {
+  const width = calibImageRef.value?.naturalWidth ?? 0
+  const height = calibImageRef.value?.naturalHeight ?? 0
+  if (!width || !height) return {}
+  return {
+    left: `${(point.u / width) * 100}%`,
+    top: `${(point.v / height) * 100}%`,
+  }
 }
 
 async function fetchCameras() {
@@ -304,10 +412,21 @@ async function fetchCameras() {
   cameraLoading.value = true
   cameraError.value = ''
   try {
-    const response = await listCameras()
+    const first = await listCameras(1, 100)
+    const items = [...first.items]
+    for (let page = 2; page <= first.total_pages; page += 1) {
+      const next = await listCameras(page, 100)
+      items.push(...next.items)
+    }
     if (!isActive()) return
-    cameras.value = response.items
-    if (!selectedCameraId.value) selectedCameraId.value = response.items[0]?.id ?? ''
+    cameras.value = items
+
+    const queryCamera = typeof route.query.camera === 'string' ? route.query.camera : ''
+    const current = items.find(camera => camera.id === selectedCameraId.value)
+    const fromQuery = items.find(camera => camera.id === queryCamera)
+    if (!current) {
+      selectedCameraId.value = fromQuery?.id ?? items[0]?.id ?? ''
+    }
   } catch (error: unknown) {
     if (!isActive()) return
     cameraError.value = errorMessage(error)
@@ -333,46 +452,55 @@ async function fetchGroundReferences() {
   }
 }
 
-watch(selectedCameraId, () => {
+watch(selectedCameraId, (value) => {
   clearCalibPreview()
   clearBevPreview()
   previewVersion++
+  calibImageState.value = 'idle'
   actionError.value = null
-  void fetchGroundReferences()
+  fetchGroundReferences()
+
+  if (value && route.query.camera !== value) {
+    void router.replace({ query: { ...route.query, camera: value } })
+  }
 })
 
-function restoreFocus(event: Event) {
-  event.preventDefault()
-  const target = dialogTrigger?.isConnected ? dialogTrigger : view.value?.querySelector<HTMLElement>('[data-ground-ref-create]')
-  target?.focus()
-}
-
-function openCreateDialog(event: MouseEvent) {
+function openCreateDialog() {
   if (busy.value || !selectedCameraId.value) return
-  dialogTrigger = event.currentTarget as HTMLElement
   refForm.value = { world_units: 'meter', description: '' }
   imagePoints.value = []
   worldPoints.value = []
   clearCalibPreview()
+  calibImageState.value = 'idle'
   saveError.value = ''
   isCreateDialogOpen.value = true
+  void loadCalibrationPreview()
+}
+
+async function loadCalibrationPreview() {
   const cameraId = selectedCameraId.value
+  if (!cameraId) return
+
   const version = ++previewVersion
-  nextTick().then(async () => {
-    if (cameraId && isActive() && version === previewVersion) {
-      try {
-        const activeCalib = await apiGetActiveCalibration(cameraId)
-        if (!isActive() || version !== previewVersion) return
-        if (activeCalib) {
-          const blob = await apiGetUndistortPreview(cameraId, activeCalib.id)
-          if (isActive() && version === previewVersion) replaceCalibPreview(blob)
-        }
-      } catch {
-        if (!isActive() || version !== previewVersion) return
-        toast.warning('Tidak dapat memuat preview kalibrasi; koordinat image bisa diketik manual')
-      }
+  clearCalibPreview()
+  calibImageState.value = 'loading'
+  try {
+    const activeCalib = await apiGetActiveCalibration(cameraId)
+    if (!isActive() || version !== previewVersion) return
+    if (!activeCalib) {
+      calibImageState.value = 'missing'
+      return
     }
-  })
+
+    const blob = await apiGetUndistortPreview(cameraId, activeCalib.id)
+    if (!isActive() || version !== previewVersion) return
+    replaceCalibPreview(blob)
+    calibImageState.value = 'ready'
+  } catch {
+    if (!isActive() || version !== previewVersion) return
+    calibImageState.value = 'error'
+    toast.warning('Gambar kalibrasi tidak dapat dimuat', { description: 'Coba lagi atau periksa kalibrasi aktif kamera.' })
+  }
 }
 
 function setCreateDialogOpen(open: boolean) {
@@ -383,13 +511,10 @@ function setCreateDialogOpen(open: boolean) {
     imagePoints.value = []
     worldPoints.value = []
     previewVersion++
+    calibImageState.value = 'idle'
     clearCalibPreview()
     saveError.value = ''
   }
-}
-
-function preventWhileSaving(event: Event) {
-  if (saving.value) event.preventDefault()
 }
 
 async function saveGroundReference() {
@@ -405,8 +530,8 @@ async function saveGroundReference() {
 
   saveError.value = ''
   const cameraId = selectedCameraId.value
-  const imagePointsArray = imagePoints.value.map(p => [p.u, p.v])
-  const worldPointsArray = worldPoints.value.map(p => [p.x, p.y])
+  const imagePointsArray = imagePoints.value.map(point => [point.u, point.v])
+  const worldPointsArray = worldPoints.value.map(point => [Number(point.x), Number(point.y)])
 
   saving.value = true
   try {
@@ -505,12 +630,18 @@ async function viewBevPreview(ref: GroundReference) {
 }
 
 function pickImagePoint(event: MouseEvent) {
-  if (!calibImageRef.value) return
-  const rect = calibImageRef.value.getBoundingClientRect()
-  const u = event.clientX - rect.left
-  const v = event.clientY - rect.top
+  const image = calibImageRef.value
+  if (!image) return
+  const rect = image.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+
+  const scaleX = (image.naturalWidth || rect.width) / rect.width
+  const scaleY = (image.naturalHeight || rect.height) / rect.height
+  const u = (event.clientX - rect.left) * scaleX
+  const v = (event.clientY - rect.top) * scaleY
+
   imagePoints.value.push({ u, v })
-  worldPoints.value.push({ x: 0, y: 0 })
+  worldPoints.value.push({ x: '', y: '' })
 }
 
 function removeImagePoint(idx: number) {
@@ -522,8 +653,9 @@ function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-import { nextTick } from 'vue'
-
 onMounted(fetchCameras)
-onUnmounted(() => { loadVersion++ })
+onUnmounted(() => {
+  loadVersion++
+  previewVersion++
+})
 </script>

@@ -1,40 +1,41 @@
 <template>
   <button
     :type="type"
-    :disabled="disabled || isLoading"
-    class="inline-flex items-center justify-center border text-sm font-medium rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-    :class="variantClasses"
+    :disabled="disabled || loading"
+    :class="buttonClasses"
+    @click="$emit('click', $event)"
   >
-    <span v-if="isLoading" class="animate-pulse">Loading...</span>
-    <slot v-else>{{ label }}</slot>
+    <span v-if="loading" class="spinner" style="width: 1rem; height: 1rem;" aria-hidden="true" />
+    <slot v-else />
   </button>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{
-  label?: string
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost'
+const props = defineProps<{
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive'
   size?: 'sm' | 'md' | 'lg'
   type?: 'button' | 'submit' | 'reset'
   disabled?: boolean
-  isLoading?: boolean
-}>(), {
-  variant: 'primary',
-  size: 'md',
-  type: 'button',
-  disabled: false,
-  isLoading: false,
-})
+  loading?: boolean
+}>()
 
-const variantClasses = computed(() => [
-  props.variant === 'primary' && 'bg-primary text-white border-primary hover:bg-primary/80',
-  props.variant === 'secondary' && 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200',
-  props.variant === 'outline' && 'bg-white text-primary border-primary hover:bg-primary/10',
-  props.variant === 'ghost' && 'bg-transparent text-gray-700 border-transparent hover:bg-gray-100',
-  props.size === 'sm' && 'px-2.5 py-1.5 text-xs',
-  props.size === 'md' && 'px-3 py-2',
-  props.size === 'lg' && 'px-4 py-2.5 text-base',
+const emit = defineEmits<{
+  click: [event: MouseEvent]
+}>()
+
+const buttonClasses = computed(() => [
+  'btn inline-flex items-center justify-center gap-2 font-medium transition-colors',
+  {
+    'btn-primary': props.variant === 'primary' || !props.variant,
+    'btn-secondary': props.variant === 'secondary',
+    'btn-outline': props.variant === 'outline',
+    'btn-ghost': props.variant === 'ghost',
+    'btn-destructive': props.variant === 'destructive',
+    'btn-sm': props.size === 'sm',
+    'btn-lg': props.size === 'lg',
+    'opacity-50 cursor-not-allowed': props.disabled || props.loading,
+  }
 ])
 </script>
