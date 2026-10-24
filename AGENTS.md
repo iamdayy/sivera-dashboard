@@ -99,3 +99,14 @@ Treat these as product-correctness requirements, not optional polish.
 9. **Change sequencing.** Prioritize (P0) readiness correctness and regression tests; (P1) real depth-scale readiness and job-state/error handling; (P1) first-time setup and measurement journey; (P2) result explainability and visual refinement. Avoid unrelated rewrites.
 
 Before closing work, report the files changed, tests actually run, whether they used mocks or a live backend, and any remaining unverified hardware/model behavior.
+
+
+## User journey and account-management rules
+
+- Design for one organization in the current release. Keep UI/domain boundaries ready for future multi-organization support, but do not add tenant selectors, organization CRUD, or pretend tenant isolation exists.
+- Primary journey: sign in/session restore (only when supported by the actual auth contract) → dashboard → readiness/setup → create measurement → persisted job status → result review → history/repeat measurement.
+- Before implementing login, logout, invitations, user CRUD, roles, or session refresh, inspect the current backend auth model and OpenAPI. The current API-key header is service/API authentication, not proof that end-user accounts or sessions exist. Do not implement fake frontend-only accounts or store privileged API keys as public VITE_* secrets.
+- Proposed permissions for product design: Administrator manages access and permitted configuration; Operator runs measurements and reviews results; Viewer reads permitted results/history. These are proposed roles, not existing capabilities. Map them to server-enforced permissions only after the auth contract supports them.
+- Protect routes for usability, but treat backend authorization as the security boundary. Hide or disable actions the current principal cannot perform and handle 401/403, expired sessions, conflicts, and network errors explicitly.
+- User-management UI, if supported by the backend: searchable user list, clear role/status, create/invite through supported flows, role changes with confirmation, deactivate/reactivate with confirmation, and safeguards against removing the last administrator where applicable. Never invent endpoints.
+- Acceptance: a new operator can identify the next setup action; a failed or blocked measurement explains recovery; account/access errors do not look like system outages; history and result access follow permissions; unsupported auth/user-management features are clearly marked unavailable rather than mocked.
