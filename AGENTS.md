@@ -83,3 +83,19 @@ Historical note: before the MediaMTX backend update, this file documented unpref
 4. Implement the smallest cohesive change.
 5. Add tests and update documentation when behavior changes.
 6. Report changed files, commands run, and known limitations.
+
+## UX and prediction-readiness implementation rules
+
+Treat these as product-correctness requirements, not optional polish.
+
+1. **Fix the confirmed readiness defect first.** In `src/services/readiness.ts`, `activeGroundModelId` is initialized to `null`, checked before fetching the active ground model, and never assigned. Fetch the active ground model before deriving readiness; populate its ID from the actual response and compare its `calibration_id` with the active calibration. Keep the result consistent with the backend's authoritative prerequisites. Add regression tests for: compatible active calibration + ground model; missing ground model; calibration/model mismatch; missing calibration intrinsics; API/network failure.
+2. **Do not infer depth-scale readiness.** Inspect current live `/openapi.json` and implement readiness through the actual depth-scale endpoint/response contract. Readiness must include a depth scale compatible with the exact ground model and model version required by prediction. Remove stale documentation that says the public API cannot inspect depth-scale readiness only after confirming the deployed contract.
+3. **One source of truth.** Avoid conflicting readiness rules in `readiness.ts`, `predictions.ts`, page components, and stores. Put prerequisite resolution in one typed service/domain function; UI components should render its result rather than reimplementing checks. If backend adds an authoritative readiness endpoint, use it instead of duplicating business logic.
+4. **Never conflate service health and measurement readiness.** Backend health, API-key scope access, camera/stream status, calibration, ground reference/model, depth scale, worker availability, and prediction status are distinct signals. A successful `/health` request is not proof that inference can run.
+5. **Model prediction as a persisted job.** For HTTP 202, keep the returned `job_id`, show queued/processing/done/failed states from the job endpoint, and preserve the user's context during polling/navigation where practical. A browser request abort is not cancellation. Do not show success until the persisted job reports completion and required result data is available.
+6. **Actionable errors.** Map stable API error codes to Bahasa Indonesia messages with (a) what failed, (b) why it blocks the task when known, and (c) the next action or destination. Retry only transient/idempotent operations and explain when a new prediction job is required.
+7. **Every relevant view has explicit states.** Implement loading, empty/unconfigured, ready, processing, success, partial-result, permission/network error, and recoverable failure states as appropriate. Disable an unavailable primary action with a nearby explanation and direct link to the missing setup step; do not rely on color alone.
+8. **Evidence discipline.** Mock tests prove frontend behavior only. For camera playback, snapshots, queued inference, artifact previews, and complete measurement flows, add a real-backend integration/E2E path where available. Mark skipped tests and unavailable hardware/model prerequisites explicitly; never report them as verified.
+9. **Change sequencing.** Prioritize (P0) readiness correctness and regression tests; (P1) real depth-scale readiness and job-state/error handling; (P1) first-time setup and measurement journey; (P2) result explainability and visual refinement. Avoid unrelated rewrites.
+
+Before closing work, report the files changed, tests actually run, whether they used mocks or a live backend, and any remaining unverified hardware/model behavior.
