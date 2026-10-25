@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
-import type { Camera, CameraDetail, CameraList, Calibration, CalibrationList, GroundReference, GroundReferenceList, HealthStatus } from '../../src/types'
+import type { Camera, CameraDetail, CameraList, Calibration, CalibrationList, DepthScale, GroundReference, GroundReferenceList, HealthStatus } from '../../src/types'
+import type { GroundModel } from '../../src/services/groundReferences'
 
 export const apiOrigin = 'http://sivera-ui.test'
 export const camera: Camera = {
@@ -63,6 +64,39 @@ export const inactiveGroundRef: GroundReference = {
   is_active: false,
   description: 'Referensi tidak aktif',
   created_at: '2026-10-21T10:00:00Z',
+}
+
+export const groundModel: GroundModel = {
+  id: '55555555-5555-4555-8555-555555555555',
+  camera_id: camera.id,
+  calibration_id: calibration.id,
+  ground_ref_id: groundRef.id,
+  R_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  t_vector: [0, 0, 5],
+  H_i2w: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  H_w2i: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  cam_height: 5,
+  pitch_down_deg: null,
+  reproj_err_px: null,
+  bev_ppm: 100,
+  bev_margin_m: 1,
+  created_at: groundRef.created_at,
+}
+
+export const depthScale: DepthScale = {
+  id: '66666666-6666-4666-8666-666666666666',
+  camera_id: camera.id,
+  ground_model_id: groundModel.id,
+  depth_model: 'fixture-depth.pt',
+  scale_s: 1,
+  offset_b: 0,
+  residuals: [0, 0, 0],
+  mean_residual_m: 0,
+  max_residual_m: 0,
+  clip_min_m: 0.1,
+  clip_max_m: 50,
+  is_active: true,
+  created_at: groundRef.created_at,
 }
 
 export async function installApiFixture(page: Page, authenticated = false, items: Camera[] = []) {

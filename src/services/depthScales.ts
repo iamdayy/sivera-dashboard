@@ -1,7 +1,10 @@
 import { apiClient, cameraPath, getConnectionContext, normalizeApiError } from './api'
 import { fetchArtifactBlob, requireImageBlob, trustedArtifactUrl } from './artifacts'
-import type { Calibration, DepthScale, DepthScaleCreate, DepthScaleListResponse, DepthScaleImageResponse, GroundReference } from '@/types'
+import type { Calibration, DepthScale, DepthScaleCreate, DepthScaleListResponse, DepthScaleImageResponse } from '@/types'
 import type { GroundModel } from './groundReferences'
+import { isMissingActiveResource, resolveMeasurementContext } from './measurementContext'
+
+export { isMissingActiveResource } from './measurementContext'
 
 // Deployment inference defaults to 120 s. Upload/preparation/persistence need additional time.
 export const DEPTH_SCALE_CREATE_TIMEOUT_MS = 180_000
@@ -16,23 +19,13 @@ export function depthScaleContextKey(context: DepthScaleContext): string {
   return `${context.groundModel.camera_id}/${context.calibration.id}/${context.groundModel.id}/${context.groundModel.ground_ref_id}`
 }
 
-export function isMissingActiveResource(error: unknown): boolean {
-  const normalized = normalizeApiError(error)
-  return normalized.status === 404 && !normalized.code
-}
-
 export async function getDepthScaleContext(cameraId: string, signal?: AbortSignal): Promise<DepthScaleContext> {
   try {
-    const calibration = (await apiClient.get<Calibration>(cameraPath(cameraId, '/calibrations/active'), { signal })).data
-    const [modelResponse, referenceResponse] = await Promise.all([
-      apiClient.get<GroundModel>(cameraPath(cameraId, '/ground-models/active'), { signal }),
-      apiClient.get<GroundReference>(cameraPath(cameraId, '/ground-references/active'), { signal }),
-    ])
-    const groundModel = modelResponse.data
-    const reference = referenceResponse.data
-    if (!calibration.is_active || calibration.camera_id !== cameraId || groundModel.camera_id !== cameraId ||
-        groundModel.calibration_id !== calibration.id || reference.camera_id !== cameraId || !reference.is_active ||
-        reference.calibration_id !== calibration.id || groundModel.ground_ref_id !== reference.id) {
+    const { calibration, groundModel, missing } = await resolveMeasurementContext(cameraId, signal)
+    if (!calibration || !groundModel || missing.some(code => code.startsWith('prediction_requires_'))) {
+      throw { status: 404, message: 'Kalibrasi dan referensi tanah dengan model ground yang sesuai harus aktif terlebih dahulu.' }
+    }
+    if (missing.length > 0) {
       throw { status: 409, code: 'depth_scale_prerequisites_changed', message: 'Konfigurasi aktif berubah. Muat ulang kalibrasi dan referensi tanah.' }
     }
     return { calibration, groundModel }

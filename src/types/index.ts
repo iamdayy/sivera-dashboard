@@ -175,15 +175,36 @@ export interface HealthStatus {
   database: string
 }
 
+export type PredictionPrerequisiteCode =
+  | 'prediction_requires_calibration'
+  | 'prediction_requires_ground_reference'
+  | 'prediction_requires_ground_model'
+  | 'prediction_requires_depth_scale'
+  | 'calibration_context_mismatch'
+  | 'ground_reference_context_mismatch'
+  | 'ground_reference_calibration_mismatch'
+  | 'ground_model_context_mismatch'
+  | 'ground_model_calibration_mismatch'
+  | 'ground_model_reference_mismatch'
+  | 'depth_scale_context_mismatch'
+  | 'calibration_intrinsics_missing'
+  | 'calibration_invalid_intrinsics'
+
 export interface PredictionPrerequisites {
+  camera_id: string
+  source_type: PredictionSourceType
+  ready: boolean
   has_active_calibration: boolean
   has_active_ground_model: boolean
   has_active_depth_scale: boolean
-  missing: string[]
+  calibration_intrinsics_missing: boolean
+  legacy_upload: boolean
+  missing: PredictionPrerequisiteCode[]
   active_calibration_id: string | null
   active_ground_model_id: string | null
   active_depth_scale_id: string | null
   active_ground_ref_id: string | null
+  active_depth_model: string | null
 }
 
 export type StreamStatus = 'disabled' | 'idle' | 'online' | 'offline' | 'unknown'

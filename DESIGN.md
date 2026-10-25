@@ -62,12 +62,12 @@ When a step is blocked, explain why and provide a direct route to the relevant s
 1. Select a camera and image.
 2. Check configuration prerequisites before submission.
 3. Submit using exact multipart field names and enum values from the current OpenAPI schema.
-4. Show a loading state without assuming a fixed duration or genuinely asynchronous processing.
+4. Retain the HTTP 202 job ID and show queued/processing/done/failed from the persisted job endpoint; do not assume a fixed duration.
 5. Render only output images, BEV previews, estimates, and report links actually returned by the API.
 6. Label volume methods distinctly (for example, grid/voxel and convex hull) and show `m³` and `L` when available.
 7. Convert technical errors into readable messages without exposing stack traces.
 
-**Current backend contract (22 October 2026):** `upload`, `rtsp_frame`, and `latest_rtsp` create persisted queued jobs with HTTP 202. History and status are read from prediction GET endpoints. RTSP sources omit file/timestamp. Frontend stream/capture/snapshot/prediction workflows are being integrated in stages; code or mock signaling is not evidence of live playback or inference. The public API cannot verify depth-scale readiness.
+**Current backend contract (live OpenAPI rechecked 25 October 2026):** `upload`, `rtsp_frame`, and `latest_rtsp` create persisted queued jobs with HTTP 202. History and status are read from prediction GET endpoints. RTSP sources omit file/timestamp. `GET /api/v1/cameras/{camera_id}/ground-models/{ground_model_id}/depth-scales/active` returns the active scale, including `depth_model`. The general OpenAPI description still incorrectly says no public depth-scale endpoint exists; use the verified paths/schema. Frontend stream/capture/snapshot/prediction workflows are being integrated in stages; code or mock signaling is not evidence of live playback or inference. No public worker or model-file/version readiness check was found.
 
 Historical limitation: the previous handler rejected RTSP and ran upload prediction synchronously despite HTTP 202. This remains a record of the old implementation, not a description of the MediaMTX backend.
 
@@ -142,9 +142,11 @@ Keep domain logic out of presentation components where practical. Every data vie
 
 ## 11. UX audit findings and required behavior
 
-### Confirmed implementation issue
+### Readiness correction (25 October 2026)
 
-`src/services/readiness.ts` checks `activeGroundModelId` while it is still `null`; it never assigns that ID after initialization. This can report a missing ground model even when one exists. Fix the data flow and cover it with regression tests before visual redesign. Do not assume every prediction route is broken: inspect all call paths and make their prerequisite behavior consistent.
+The previous `src/services/readiness.ts` checked a ground-model ID before fetching it and never populated that ID. The resolver now reads the active resources before deriving readiness, retains their returned IDs, and checks calibration/reference/model compatibility through `measurementContext.ts`. `checkPredictionPrerequisites` is an alias of the same readiness function, not a second set of rules. Missing configuration is distinct from API/network failures. Intrinsics requirements follow the selected prediction source; legacy uploads need an already-undistorted image. Analysis clears stale readiness and rechecks it before submission. Live `/health` and `/openapi.json` were read successfully on 25 October 2026 and reconciled with backend routes/tests. Resource requests with a configured API key/camera remain unverified live. Regression tests use mock responses and do not establish workers, model files/versions, physical accuracy, or hardware behavior.
+
+Readiness here means compatible configuration for the chosen source, not inference availability. `DepthScaleResponse` exposes a model name but no model version or file-availability signal. Depth-scale create currently accepts only `known_distances` and fits against the first calibration image; points selected on the frontend's uploaded preview are not bound to that input. Resolve that identity mismatch before claiming the scale-creation journey works.
 
 ### UX objective
 

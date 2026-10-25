@@ -1,9 +1,8 @@
 import { apiClient, cameraPath, normalizeApiError } from './api'
-import type { Calibration, GroundReference, PredictionJob, SubmitPredictionResult, PredictionOutput, DetectedInstance, VolumeEstimate, PaginatedList, PredictionPrerequisites } from '@/types'
-import type { GroundModel } from './groundReferences'
-import { getActiveDepthScale, isMissingActiveResource } from './depthScales'
+import type { PredictionJob, SubmitPredictionResult, PredictionOutput, DetectedInstance, VolumeEstimate, PaginatedList } from '@/types'
 
 export type { PredictionPrerequisites } from '@/types'
+export { checkReadiness as checkPredictionPrerequisites } from './readiness'
 
 export type PredictionJobList = PaginatedList<PredictionJob>
 
@@ -99,70 +98,5 @@ export async function getPredictionVolumes(cameraId: string, jobId: string): Pro
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
-  }
-}
-
-export async function checkPredictionPrerequisites(cameraId: string): Promise<PredictionPrerequisites> {
-  const missing: string[] = []
-  let activeCalibrationId: string | null = null
-  let activeGroundModelId: string | null = null
-  let activeDepthScaleId: string | null = null
-  let activeGroundRefId: string | null = null
-
-  // Check active calibration
-  try {
-    const calibration = await apiClient.get<Calibration>(cameraPath(cameraId, '/calibrations/active'))
-    if (calibration.data.camera_id !== cameraId || !calibration.data.is_active) {
-      throw { status: 409, code: 'depth_scale_prerequisites_changed', message: 'Kalibrasi aktif berubah. Muat ulang konfigurasi.' }
-    }
-    activeCalibrationId = calibration.data.id
-  } catch (error) {
-    if (!isMissingActiveResource(error)) throw normalizeApiError(error)
-    missing.push('Kalibrasi aktif')
-  }
-
-  // Check active ground model
-  try {
-    if (activeCalibrationId) {
-      const [model, reference] = await Promise.all([
-        apiClient.get<GroundModel>(cameraPath(cameraId, '/ground-models/active')),
-        apiClient.get<GroundReference>(cameraPath(cameraId, '/ground-references/active')),
-      ])
-      if (model.data.camera_id !== cameraId || model.data.calibration_id !== activeCalibrationId ||
-          !reference.data.is_active || reference.data.camera_id !== cameraId || reference.data.calibration_id !== activeCalibrationId ||
-          model.data.ground_ref_id !== reference.data.id) {
-        missing.push('Model ground tidak cocok dengan kalibrasi/referensi aktif')
-      } else {
-        activeGroundModelId = model.data.id
-        activeGroundRefId = reference.data.id
-      }
-    }
-  } catch (error) {
-    if (!isMissingActiveResource(error)) throw normalizeApiError(error)
-  }
-  if (!activeGroundModelId && !missing.some(label => label.startsWith('Model ground'))) missing.push('Model ground aktif')
-
-  if (activeGroundModelId) {
-    try {
-      const scale = await getActiveDepthScale(cameraId, activeGroundModelId)
-      if (scale.camera_id !== cameraId || scale.ground_model_id !== activeGroundModelId || !scale.is_active) {
-        throw { status: 409, code: 'depth_scale_prerequisites_changed', message: 'Skala aktif tidak sesuai model ground. Muat ulang konfigurasi.' }
-      }
-      activeDepthScaleId = scale.id
-    } catch (error) {
-      if (!isMissingActiveResource(error)) throw normalizeApiError(error)
-    }
-  }
-  if (!activeDepthScaleId) missing.push('Skala kedalaman aktif')
-
-  return {
-    has_active_calibration: !!activeCalibrationId,
-    has_active_ground_model: !!activeGroundModelId,
-    has_active_depth_scale: !!activeDepthScaleId,
-    missing,
-    active_calibration_id: activeCalibrationId,
-    active_ground_model_id: activeGroundModelId,
-    active_depth_scale_id: activeDepthScaleId,
-    active_ground_ref_id: activeGroundRefId,
   }
 }

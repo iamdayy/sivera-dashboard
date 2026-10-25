@@ -1,77 +1,112 @@
-import { getActiveCalibration, getActiveGroundModel, getCamera } from '@/services'
-import type { Camera, Calibration } from '@/types'
-import type { GroundModel } from '@/services/groundReferences'
+import { assertCurrentConnection, getConnectionContext, normalizeApiError } from './api'
+import { getActiveDepthScale } from './depthScales'
+import { isMissingActiveResource, resolveMeasurementContext } from './measurementContext'
+import type {
+  DepthScale,
+  PredictionPrerequisiteCode,
+  PredictionPrerequisites,
+  PredictionSourceType,
+} from '@/types'
 
-export interface PrerequisiteCheck {
-  has_active_calibration: boolean
-  has_active_ground_model: boolean
-  calibration_intrinsics_missing: boolean
-  missing: string[]
-  active_calibration_id: string | null
-  active_ground_model_id: string | null
-  camera_id: string
-}
+export type PrerequisiteCheck = PredictionPrerequisites
 
-export async function checkReadiness(cameraId: string): Promise<PrerequisiteCheck> {
-  const missing: string[] = []
-  let activeCalibration: Calibration | null = null
-  let activeGroundModel: GroundModel | null = null
-  let activeCalibrationId: string | null = null
-  let activeGroundModelId: string | null = null
-
+export async function checkReadiness(
+  cameraId: string,
+  sourceType: PredictionSourceType = 'upload',
+): Promise<PredictionPrerequisites> {
+  const connection = getConnectionContext()
   try {
-    const camera = await getCamera(cameraId)
-    activeCalibrationId = camera.active_calibration_id
+    const context = await resolveMeasurementContext(cameraId, connection.signal)
+    assertCurrentConnection(connection)
+    const { calibration, groundModel, groundReference } = context
+    const missing = [...context.missing]
+    const hasActiveCalibration = !!calibration && !missing.includes('calibration_context_mismatch')
+    const hasActiveGroundModel = context.missing.length === 0
+    const intrinsicsMissing =
+      !!calibration &&
+      (!calibration.k_original || !calibration.resolution_w || !calibration.resolution_h)
 
-    if (!camera.active_calibration_id) {
-      missing.push('prediction_requires_calibration')
-    } else {
-      activeCalibration = await getActiveCalibration(cameraId)
-      if (activeCalibration) {
-        if (!activeCalibration.k_original || !activeCalibration.resolution_w || !activeCalibration.resolution_h) {
-          missing.push('calibration_intrinsics_missing')
-        }
-      } else {
-        missing.push('prediction_requires_calibration')
-      }
+    if (hasActiveCalibration && intrinsicsMissing) {
+      if (sourceType !== 'upload') missing.push('calibration_intrinsics_missing')
+      else if (calibration.k_original) missing.push('calibration_invalid_intrinsics')
     }
 
-    if (!activeGroundModelId) {
-      missing.push('prediction_requires_ground_model')
-    } else if (activeCalibrationId) {
+    let depthScale: DepthScale | null = null
+    if (hasActiveGroundModel && groundModel) {
       try {
-        activeGroundModel = await getActiveGroundModel(cameraId)
-        if (!activeGroundModel) {
-          missing.push('prediction_requires_ground_model')
-        } else if (activeGroundModel.calibration_id !== activeCalibrationId) {
-          missing.push('ground_model_calibration_mismatch')
+        depthScale = await getActiveDepthScale(cameraId, groundModel.id, connection.signal)
+        if (
+          depthScale.camera_id !== cameraId ||
+          depthScale.ground_model_id !== groundModel.id ||
+          !depthScale.is_active
+        ) {
+          missing.push('depth_scale_context_mismatch')
         }
-      } catch {
-        missing.push('prediction_requires_ground_model')
+      } catch (error) {
+        if (!isMissingActiveResource(error)) throw error
+        missing.push('prediction_requires_depth_scale')
       }
     }
-  } catch {
-    missing.push('prediction_requires_calibration')
-    missing.push('prediction_requires_ground_model')
-  }
+    assertCurrentConnection(connection)
 
-  return {
-    has_active_calibration: !!activeCalibration,
-    has_active_ground_model: !!activeGroundModel,
-    calibration_intrinsics_missing: missing.includes('calibration_intrinsics_missing'),
-    missing,
-    active_calibration_id: activeCalibrationId,
-    active_ground_model_id: activeGroundModelId,
-    camera_id: cameraId,
+    return {
+      camera_id: cameraId,
+      source_type: sourceType,
+      ready: missing.length === 0,
+      has_active_calibration: hasActiveCalibration,
+      has_active_ground_model: hasActiveGroundModel,
+      has_active_depth_scale: !!depthScale && !missing.includes('depth_scale_context_mismatch'),
+      calibration_intrinsics_missing: intrinsicsMissing,
+      legacy_upload: hasActiveCalibration && sourceType === 'upload' && !calibration.k_original,
+      missing,
+      active_calibration_id: calibration?.id ?? null,
+      active_ground_model_id: groundModel?.id ?? null,
+      active_ground_ref_id: groundReference?.id ?? null,
+      active_depth_scale_id: depthScale?.id ?? null,
+      active_depth_model: depthScale?.depth_model ?? null,
+    }
+  } catch (error) {
+    assertCurrentConnection(connection)
+    throw normalizeApiError(error)
   }
 }
 
-export function getMissingPrerequisiteLabels(missing: string[]): string[] {
-  const labels: Record<string, string> = {
-    prediction_requires_calibration: 'Kalibrasi aktif diperlukan',
-    prediction_requires_ground_model: 'Model ground aktif diperlukan',
-    calibration_intrinsics_missing: 'Kalibrasi tidak memiliki intrinsics asli/dimensi (lakukan kalibrasi ulang)',
-    ground_model_calibration_mismatch: 'Model ground tidak cocok dengan kalibrasi aktif',
-  }
-  return missing.map(code => labels[code] || code)
+const labels: Record<PredictionPrerequisiteCode, string> = {
+  prediction_requires_calibration: 'Kalibrasi aktif belum tersedia. Buat dan aktifkan kalibrasi.',
+  prediction_requires_ground_reference:
+    'Referensi tanah aktif belum tersedia. Buat dan aktifkan referensi tanah.',
+  prediction_requires_ground_model:
+    'Model ground untuk konfigurasi aktif belum tersedia. Periksa Referensi Tanah.',
+  prediction_requires_depth_scale:
+    'Skala kedalaman aktif belum tersedia untuk model ground ini. Buat dan aktifkan skala.',
+  calibration_context_mismatch:
+    'Respons kalibrasi tidak sesuai kamera atau tidak aktif. Muat ulang Kalibrasi.',
+  ground_reference_context_mismatch:
+    'Respons referensi tanah tidak sesuai kamera atau tidak aktif. Muat ulang Referensi Tanah.',
+  ground_reference_calibration_mismatch:
+    'Referensi tanah tidak cocok dengan kalibrasi aktif. Buat atau aktifkan referensi yang sesuai.',
+  ground_model_context_mismatch: 'Model ground tidak sesuai kamera. Muat ulang Referensi Tanah.',
+  ground_model_calibration_mismatch:
+    'Model ground tidak cocok dengan kalibrasi aktif. Periksa Referensi Tanah.',
+  ground_model_reference_mismatch:
+    'Model ground tidak cocok dengan referensi tanah aktif. Periksa Referensi Tanah.',
+  depth_scale_context_mismatch:
+    'Skala kedalaman tidak aktif atau tidak cocok dengan kamera/model ground. Muat ulang Skala Kedalaman.',
+  calibration_intrinsics_missing:
+    'Sumber RTSP memerlukan intrinsics asli dan dimensi kalibrasi. Lakukan kalibrasi ulang.',
+  calibration_invalid_intrinsics:
+    'Intrinsics asli tersedia tetapi dimensi kalibrasi belum lengkap. Lakukan kalibrasi ulang.',
+}
+
+export function getMissingPrerequisiteLabels(
+  missing: readonly PredictionPrerequisiteCode[],
+): string[] {
+  return missing.map((code) => labels[code])
+}
+
+export function getPrerequisiteRecoveryPath(code: PredictionPrerequisiteCode): string {
+  if (code.includes('depth_scale')) return '/dashboard/depth-scales'
+  if (code.startsWith('calibration_') || code === 'prediction_requires_calibration')
+    return '/dashboard/calibrations'
+  return '/dashboard/ground-references'
 }

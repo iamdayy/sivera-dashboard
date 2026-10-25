@@ -115,6 +115,7 @@
               <div v-else-if="readinessError" class="mt-3 rounded-md border border-negative-border bg-negative-bg/40 p-3">
                 <p class="text-sm text-negative">Gagal memeriksa prasyarat: {{ readinessError }}</p>
                 <Button variant="outline" class="mt-2" @click="fetchReadiness(selectedCamera.id)">Coba Lagi</Button>
+                <RouterLink to="/dashboard/settings" class="ml-3 inline-flex min-h-11 items-center text-sm text-brand underline">Buka Pengaturan</RouterLink>
               </div>
 
               <ul v-else-if="readiness" class="mt-3 space-y-2">
@@ -124,7 +125,7 @@
                   <div class="min-w-0 flex-1">
                     <p class="font-medium text-text">Kalibrasi aktif</p>
                     <p class="text-sm text-text-muted">
-                      {{ readiness.has_active_calibration ? 'Parameter intrinsik tersedia.' : 'Belum ada kalibrasi aktif.' }}
+                      {{ readiness.has_active_calibration ? 'Kalibrasi aktif tersedia; lihat persyaratan sumber di Analisis.' : 'Kalibrasi aktif belum tersedia atau tidak sesuai kamera.' }}
                     </p>
                   </div>
                   <RouterLink
@@ -141,7 +142,7 @@
                   <div class="min-w-0 flex-1">
                     <p class="font-medium text-text">Model ground aktif</p>
                     <p class="text-sm text-text-muted">
-                      {{ readiness.has_active_ground_model ? 'Referensi tanah aktif tersedia.' : 'Belum ada model ground aktif.' }}
+                      {{ readiness.has_active_ground_model ? 'Model cocok dengan kalibrasi dan referensi tanah aktif.' : 'Model ground belum tersedia atau tidak cocok dengan konfigurasi aktif.' }}
                     </p>
                   </div>
                   <RouterLink
@@ -153,11 +154,12 @@
                 </li>
 
                 <li class="flex flex-col gap-2 rounded-md border border-sheet-border p-3 sm:flex-row sm:items-center">
-                  <Scale class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+                  <CheckCircle v-if="readiness.has_active_depth_scale" class="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+                  <XCircle v-else class="h-5 w-5 shrink-0 text-negative" aria-hidden="true" />
                   <div class="min-w-0 flex-1">
                     <p class="font-medium text-text">Skala kedalaman</p>
                     <p class="text-sm text-text-muted">
-                      Kesiapan skala kedalaman dapat diperiksa melalui API.
+                      {{ readiness.has_active_depth_scale ? 'Skala aktif tersedia untuk model ground ini.' : 'Skala aktif belum dapat digunakan. Selesaikan prasyarat yang tercantum.' }}
                     </p>
                   </div>
                   <RouterLink :to="{ path: '/dashboard/depth-scales', query: { camera: selectedCamera.id } }" class="btn btn-ghost btn-sm min-h-11 shrink-0">
@@ -166,9 +168,7 @@
                 </li>
               </ul>
 
-              <div v-if="readiness && readiness.missing.length > 0" class="mt-3 rounded-md bg-negative-bg p-3 text-sm text-negative">
-                <p class="font-medium">Komponen yang hilang: {{ readiness.missing.join(', ') }}</p>
-              </div>
+              <PredictionReadinessIssues v-if="readiness" :readiness="readiness" class="mt-3" />
             </div>
           </div>
 
@@ -365,9 +365,10 @@ import { listPredictionJobs, checkPredictionPrerequisites, getPredictionVolumes 
 import type { Camera, PredictionJob, VolumeEstimate } from '@/types'
 import type { PredictionPrerequisites } from '@/services/predictions'
 import VolumeChart from '@/components/dashboard/VolumeChart.vue'
+import PredictionReadinessIssues from '@/components/PredictionReadinessIssues.vue'
 import Button from '@/components/ui/Button.vue'
 import { RouterLink } from 'vue-router'
-import { AlertCircle, Brain, CheckCircle, GitCompare, HelpCircle, MapPin, Scale, Video, XCircle } from '@lucide/vue'
+import { AlertCircle, Brain, CheckCircle, GitCompare, HelpCircle, MapPin, Video, XCircle } from '@lucide/vue'
 
 interface ChartPoint {
   jobId: string
@@ -408,6 +409,7 @@ const statsFailureCount = ref(0)
 const readiness = ref<PredictionPrerequisites | null>(null)
 const readinessLoading = ref(false)
 const readinessError = ref<string | null>(null)
+let readinessRequestId = 0
 
 const chartData = ref<ChartPoint[]>([])
 const chartLoading = ref(false)
@@ -524,18 +526,19 @@ async function fetchCameraDetails(cameraId: string) {
 }
 
 async function fetchReadiness(cameraId: string) {
+  const requestId = ++readinessRequestId
   readinessLoading.value = true
   readiness.value = null
   readinessError.value = null
   try {
     const result = await checkPredictionPrerequisites(cameraId)
-    if (!isActive() || cameraId !== selectedCameraId.value) return
+    if (!isActive() || requestId !== readinessRequestId || cameraId !== selectedCameraId.value) return
     readiness.value = result
   } catch (error: unknown) {
-    if (!isActive() || cameraId !== selectedCameraId.value) return
+    if (!isActive() || requestId !== readinessRequestId || cameraId !== selectedCameraId.value) return
     readinessError.value = errorMessage(error)
   } finally {
-    if (isActive() && cameraId === selectedCameraId.value) {
+    if (isActive() && requestId === readinessRequestId && cameraId === selectedCameraId.value) {
       readinessLoading.value = false
     }
   }
@@ -748,6 +751,7 @@ async function onCameraChange(cameraId: string) {
 }
 
 function resetForMissingKey() {
+  readinessRequestId += 1
   cameras.value = []
   selectedCameraId.value = ''
   selectedCamera.value = null
