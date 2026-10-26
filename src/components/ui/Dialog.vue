@@ -15,6 +15,7 @@
             aria-labelledby="dialog-title"
             aria-describedby="dialog-description"
             tabindex="-1"
+            @focusin="keepActiveVisible"
             class="pointer-events-auto relative flex max-h-[90vh] w-full flex-col rounded-xl border border-sheet-border bg-sheet shadow-xl outline-none"
             :class="[contentClass || 'max-w-lg']"
           >
@@ -140,6 +141,7 @@ watch(() => props.open, (isOpen) => {
       target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
     })
   } else {
+    cancelAnimationFrame(resizeFrame)
     popDialog()
     document.body.style.overflow = previousOverflow
     const target = previousActiveElement
@@ -153,10 +155,13 @@ watch(() => props.open, (isOpen) => {
 function keepActiveVisible() {
   cancelAnimationFrame(resizeFrame)
   resizeFrame = requestAnimationFrame(() => {
-    const root = contentRef.value
-    const active = document.activeElement
-    if (!props.open || !root || !(active instanceof HTMLElement) || !root.contains(active)) return
-    active.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    // Chromium can finish viewport reflow after the first resize frame.
+    resizeFrame = requestAnimationFrame(() => {
+      const root = contentRef.value
+      const active = document.activeElement
+      if (!props.open || !isTopDialog() || !root || !(active instanceof HTMLElement) || !root.contains(active)) return
+      active.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
   })
 }
 
@@ -189,7 +194,7 @@ import { defineComponent, h } from 'vue'
 export const DialogContent = defineComponent({
   name: 'DialogContent',
   setup(_, { slots, attrs }) {
-    return () => h('div', { ...attrs, class: ['min-h-0 flex-1 overflow-y-auto p-5 sm:p-6', attrs.class].filter(Boolean).join(' ') }, slots.default?.())
+    return () => h('div', { ...attrs, class: ['min-h-0 flex-1 overflow-y-auto scroll-py-1 p-5 sm:p-6', attrs.class].filter(Boolean).join(' ') }, slots.default?.())
   },
 })
 

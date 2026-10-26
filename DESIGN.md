@@ -230,6 +230,12 @@ Frontend verification and the scoped visual gate: `.agents/plan/2026-10-26-resul
 - At narrow widths, prioritize the primary action, job status, and headline measurement; allow diagnostic images/details to stack rather than overflow.
 - Confirm destructive operations and distinguish a disabled action from a loading action.
 
+Dialog focus verification (26 October 2026):
+
+- On focus changes and viewport resize, wait for two animation frames before scrolling the current focused element with nearest alignment. Chromium can retain the previous dialog geometry during the first frame. Only the top open dialog may scroll; discard scheduled work on close or unmount.
+- The scrollable dialog body reserves block-axis scroll padding for the full focus outline. Verify the outline against clipping ancestors, not just whether the input itself intersects the viewport.
+- Camera/calibration regressions cover field and footer focus, Escape/restoration, 390/768/1440 px, short viewports, and 100%/200% root text size in Chromium and Firefox. Full frontend regression: 316 passed, 8 live tests skipped. Existing typography/background inspector findings and unverified device/live behavior are recorded in `.agents/plan/2026-10-26-dialog-focus-delivery.md`.
+
 ### UX acceptance criteria
 
 - A compatible configured camera is not incorrectly blocked by frontend-only readiness logic.

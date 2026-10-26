@@ -290,3 +290,17 @@ Tahap berikutnya adalah Ringkasan untuk operator baru: satu tindakan setup dari 
 - Keyboard native-summary, focus trap dua arah, Escape/restoration, body scroll dan scalable reload/disclosure pada teks 200% diperiksa. Inspector 12 state menghasilkan 0 unresolved; 12 raw modal-shadow findings dipertahankan dengan owner-based exception. Lint: 0 FAIL/7 WARN yang dijelaskan.
 - Bukti, lima belas screenshot inspector, gambar 200% kedua browser, kritik tujuh lintasan, interaksi, dan Delivery Gate: [2026-10-26-results-delivery.md](2026-10-26-results-delivery.md).
 - Tahap implementasi 2 sampai 6 selesai untuk frontend. Full regression berikutnya memakai build stabil; verifikasi authenticated readiness, deployment terbaru, inference/artifact/playback/snapshot, worker/model/hardware, dan akurasi fisik tetap pending. Tidak menambah akun/roles/session frontend-only atau push.
+
+### 26 Oktober 2026: full regression dan fokus formulir setup
+
+- Hasil di-commit sebagai `c6524e4`, tanpa push. Full suite Chromium/Firefox: 290 lulus, 14 gagal, 8 live skipped. Kegagalan berada pada fokus field/footer Kamera/Kalibrasi setelah resize atau teks 200%, bukan readiness/job/result contract.
+- Diagnostik produksi mereproduksi Longitude fokus di bawah body scroll setelah viewport dipendekkan; `scrollIntoView` eksplisit mengembalikannya. Event resize dapat mendahului perubahan fokus browser. Perbaikan terarah: jadwalkan scroll aktif juga pada `focusin`, hanya untuk dialog teratas.
+- Design Read tetap formulir setup operasional SIVERA, ENERGY 1 / RHYTHM 1 / MOTION 1. Tidak mengubah layout, API, copy, atau assertion viewport existing. Tambahkan regresi penjadwalan/focus trap dan jalankan ulang build/unit/full browser sebelum menutup tahap ini.
+
+### 26 Oktober 2026: gate regresi dan fokus selesai
+
+- `Dialog.vue` menjadwalkan scroll pada `focusin`/resize melalui dua animation frame, membaca fokus terkini, membatasi ke dialog teratas, dan membatalkan pekerjaan saat close/unmount. `scroll-py-1` menjaga outline utuh di tepi body scroll.
+- Build/application/Vitest/scoped E2E type-check lulus. Unit: 331 lulus dalam 23 file, termasuk 9 regresi dialog. Full browser produksi Chromium/Firefox: 316 lulus, 8 live skipped, 0 unexpected/flaky. Assertions viewport Kamera/Kalibrasi existing tetap lulus.
+- Inspector memeriksa 30 state: semua outline fokus utuh, tanpa overflow horizontal halaman/modal atau error browser. Raw findings disimpan: 30 shadow modal dan 2 warning batas kontrol mempunyai bukti owner; 37 temuan background dan 4 reflow judul pada teks 200% tetap tercatat sebagai batas existing. Tidak ada temuan fokus yang belum dijelaskan.
+- Review gambar akhir, diagnosis stale first-frame geometry, bukti interaksi, command, kritik, dan scoped Delivery Gate: [2026-10-26-dialog-focus-delivery.md](2026-10-26-dialog-focus-delivery.md).
+- Implementasi dan regresi frontend roadmap selesai. Probe backend terakhir connection refused; readiness berautentikasi, deployment terbaru, hasil/inference live, model/worker/hardware, snapshot/playback, dan akurasi fisik tetap belum terverifikasi. WebKit belum dapat dijalankan karena executable tidak terpasang.
