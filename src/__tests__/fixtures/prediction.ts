@@ -1,4 +1,4 @@
-import type { PredictionJob } from '@/types'
+import type { PredictionJob, VolumeEstimate } from '@/types'
 
 export function predictionJob(overrides: Partial<PredictionJob> = {}): PredictionJob {
   return {
@@ -12,5 +12,14 @@ export function predictionJob(overrides: Partial<PredictionJob> = {}): Predictio
     seg_model: null, seg_conf: 0.25, seg_classes: null, return_outputs: [],
     result: null, error_msg: null, started_at: null, completed_at: null,
     created_at: '2026-10-26T08:00:00Z', ...overrides,
+  }
+}
+
+export function volumeEstimate(overrides: Partial<VolumeEstimate> = {}): VolumeEstimate {
+  return {
+    id: '77777777-7777-4777-8777-777777777777',
+    job_id: predictionJob().id, method: 'grid', volume_m3: 0.125, volume_liter: 125,
+    footprint_m2: 0.5, cell_m: 0.1, height_mean_m: 0.3, height_median_m: 0.3,
+    n_cells: 50, n_points: 200, created_at: '2026-10-26T08:01:00Z', ...overrides,
   }
 }

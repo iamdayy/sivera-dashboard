@@ -54,6 +54,7 @@ async function setup(page: Page, jobs: PredictionJob[] = [predictionJob()]) {
       const value = state.jobs.find(item => item.id === path.split('/').pop() && item.camera_id === cameraId)
       const snapshot = value ? structuredClone(value) : null
       if (state.holdJob) await state.holdJob
+      if (request.failure()) return
       if (state.readStatus !== 200) return route.fulfill({ status: state.readStatus, json: { detail: 'Fixture status read failure' } })
       return snapshot ? route.fulfill({ json: snapshot }) : route.fulfill({ status: 404, json: { detail: 'Job not found' } })
     }
@@ -159,7 +160,8 @@ test.describe('persisted prediction jobs (mock API)', () => {
     await expect(dialog).toContainText('hasil volume belum lengkap')
     state.jobs[0]!.result = volume
     await dialog.getByRole('button', { name: 'Muat Ulang Detail' }).click()
-    await expect(dialog).toContainText('hasil volume tersedia')
+    await expect(dialog).toContainText('Job selesai. Tinjau rincian volume dan metode di bawah.')
+    await expect(dialog).not.toContainText('hasil volume belum lengkap')
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(row(page)).not.toContainText('Hasil parsial')
@@ -202,7 +204,8 @@ test.describe('persisted prediction jobs (mock API)', () => {
     await expect(page.getByRole('dialog')).toContainText('Menunggu')
     state.jobs[0] = { ...state.jobs[0]!, status: 'done', result: volume }
     await page.clock.fastForward(3100)
-    await expect(page.getByRole('dialog')).toContainText('hasil volume tersedia')
+    await expect(page.getByRole('dialog')).toContainText('Job selesai. Tinjau rincian volume dan metode di bawah.')
+    await expect(page.getByRole('dialog')).not.toContainText('hasil volume belum lengkap')
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
     expect(errors).toEqual([])
   })
@@ -216,23 +219,39 @@ test.describe('persisted prediction jobs (mock API)', () => {
     await expect(dialog.getByRole('alert')).toContainText('tidak memiliki izin')
     state.readStatus = 200
     await dialog.getByRole('button', { name: 'Muat Ulang Detail' }).click()
-    await expect(dialog).toContainText('hasil volume tersedia')
+    await expect(dialog).toContainText('Job selesai. Tinjau rincian volume dan metode di bawah.')
+    await expect(dialog).not.toContainText('hasil volume belum lengkap')
     expect(errors).toEqual([])
   })
 
-  test('old camera polling cannot change the new camera context', async ({ page }) => {
+  test('old camera polling cannot change the new camera context', async ({ page, browserName }) => {
     const { state, errors } = await setup(page)
+    const unhandled: string[] = []
+    const cancellations: string[] = []
+    await page.addInitScript(() => {
+      window.addEventListener('unhandledrejection', event => console.error('Unhandled rejection:', String(event.reason)))
+    })
+    page.on('console', message => { if (message.text().startsWith('Unhandled rejection:')) unhandled.push(message.text()) })
+    page.on('pageerror', error => {
+      // Firefox's debugger reports this handled fetch cancellation as a page error.
+      // Keep the native unhandled-rejection check and require a matching aborted request.
+      if (browserName === 'firefox' && error.name === 'CanceledError' && error.message.trim() === 'The operation was aborted.') cancellations.push(error.message)
+    })
     const held = deferred()
     state.holdJob = held.promise
     await page.goto(`/dashboard/predictions?camera=${camera.id}&tracking=${job.id}`)
     await expect.poll(() => state.reads).toBeGreaterThan(0)
+    const aborted = page.waitForEvent('requestfailed', request => request.url().endsWith(`/predict/${job.id}`))
     await page.getByLabel('Pilih Kamera', { exact: true }).selectOption(otherCamera.id)
     await expect(page).toHaveURL(new RegExp(`camera=${otherCamera.id}`))
+    expect((await aborted).failure()).not.toBeNull()
     held.resolve()
     await expect(row(page)).toBeHidden()
     await expect(page.getByText('Job diterima backend', { exact: true })).toBeHidden()
     await expect(page.getByText('Prediksi selesai', { exact: true })).toBeHidden()
-    expect(errors).toEqual([])
+    expect(cancellations.length).toBeLessThanOrEqual(1)
+    expect(errors).toEqual(cancellations)
+    expect(unhandled).toEqual([])
   })
 
   test('an ambiguous POST keeps recovery visible and does not resubmit automatically', async ({ page }) => {

@@ -203,13 +203,24 @@ Every workflow page must include a useful empty state and an explicit recovery p
 
 ### Result presentation and measurement integrity
 
-- Make one physically validated method the primary headline value. Present alternative methods in a clearly labeled comparison/details section, not as interchangeable answers.
+- The current contract does not identify a physically validated primary method. Show Grid/Voxel and Convex Hull 2D as separate estimates before diagnostics; never sum them or choose a primary method based on their magnitude. A validated primary can be introduced only when supported by evidence and the backend contract.
 - Always show units (`m³`, `L`, `m²`, `m`) when values exist; never silently turn null/missing/NaN into zero.
 - Label experimental, unvalidated estimates explicitly. A successful inference or a scale-fit acceptance is not proof of real-world accuracy.
 - Provide a visual review path: original image, waste mask/segmentation, depth visualization with legend, and BEV/footprint if the backend actually returns them.
 - Identify the actual volume method. The grid method sums per-cell representative height times cell area; its behavior depends on cell size, sparse-cell threshold, holes, and boundary-cell policy. Explain these settings when relevant and do not imply it is parameter-independent.
 - The current convex-hull method is a 2D hull footprint multiplied by a representative height, not a full 3D convex-hull volume. Do not label it “true 3D convex hull volume.”
 - Attach method and configuration context to results when the API provides it; do not invent confidence scores, uncertainty bounds, or calibration metadata that the backend does not return.
+
+Implemented result review (26 October 2026):
+
+- Grid uses the median positive height of eligible cells times cell area, excludes empty/sparse cells, and uses full boundary-cell area. Convex Hull 2D uses footprint area times median height. `n_cells` counts cells with finite height data, including zero-height cells; label it `Sel dengan data tinggi`.
+- Show `volume_m3` and `volume_liter` independently from saved API values. Missing, nonfinite, negative, or nonnumeric measurements render as `-`; zero remains zero. Positive values smaller than the displayed precision use `< 0,001` m³ or `< 1` L instead of rounding to zero.
+- Disclosures expose saved footprint/height/point diagnostics and the job's calibration, ground-model, and depth-scale IDs. These are historical IDs from the job, not currently active camera resources. The segmentation confidence threshold is not volume accuracy.
+- Source time is labeled in UTC. For RTSP it means worker reception time, not sensor capture time. `source_path` is private storage-key text, never an inferred image URL. Registered output artifacts keep their authenticated review path.
+- A failed volume read retains the job identity/status and offers a GET detail reload; 403 names the `predict:read` permission and recovery action. Completed status alone does not imply that detail values were successfully loaded.
+- Dialog disclosures participate in Tab/Shift+Tab focus trapping and support Enter/Space. Source/status metadata scrolls with the detail body so the fixed title leaves reading space at 200% root text size.
+
+Frontend verification and the scoped visual gate: `.agents/plan/2026-10-26-results-delivery.md`. The opt-in saved-result integration in `e2e/live-backend.spec.ts` needs `SIVERA_API_BASE_URL`, `SIVERA_API_KEY`, `SIVERA_CAMERA_ID`, and `SIVERA_RESULT_JOB_ID` for an existing completed job with saved volumes. It checks displayed values, historical IDs, and returned image decoding without submitting inference. Live result/model/hardware behavior remains unverified.
 
 ### Accessibility and responsive interaction
 

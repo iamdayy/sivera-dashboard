@@ -78,7 +78,7 @@ function focusableElements(): HTMLElement[] {
   const root = contentRef.value
   if (!root) return []
   return Array.from(root.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary:first-of-type:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])',
   )).filter(element => element.getClientRects().length > 0)
 }
 

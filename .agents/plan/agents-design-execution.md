@@ -70,8 +70,8 @@ Alur: Pengaturan akses → Kamera → Kalibrasi → Referensi Tanah → Skala Ke
 ### 6. P2: hasil dan visual
 
 - [x] Pertahankan shell, typography, spacing, dan aksen existing; hindari redesign di luar kebutuhan workflow.
-- [ ] Unit, metode, source, job, dan konfigurasi hanya dari respons API.
-- [ ] Nilai hilang bukan nol; job berhasil/fit diterima bukan sertifikasi akurasi fisik.
+- [x] Unit, metode, source, job, dan konfigurasi hanya dari respons API; konfigurasi historis memakai ID job, bukan resource aktif sekarang.
+- [x] Nilai hilang bukan nol; job berhasil/fit diterima bukan sertifikasi akurasi fisik. Grid/Hull terpisah, kecil positif tidak dibulatkan menjadi nol.
 - [x] Periksa keyboard, fokus, kontras, target sentuh 44px pada link recovery baru, mobile/tablet, dan teks 200% untuk perubahan readiness.
 - [x] Jalankan Delivery Gate antislop dan rekam bukti click-through untuk delta readiness, bukan persetujuan seluruh dashboard.
 
@@ -273,3 +273,20 @@ Tahap berikutnya adalah Ringkasan untuk operator baru: satu tindakan setup dari 
 - Kamera dan langkah readiness muncul sebelum metrik; detail panjang menjadi disclosure. State loading metrik tidak menahan readiness. Nilai metrik yang gagal dimuat tetap `null`, agregat parsial menyatakan cakupan.
 - Inspector produksi: 12 state pada 390/768/1280, 0 FAIL/10 WARN. Semua gambar dibuka; alasan warning, kritik, click-through, dan Delivery Gate tersimpan di [2026-10-26-operator-delivery.md](2026-10-26-operator-delivery.md).
 - Berikutnya: jelaskan metode/unit/konteks hasil dan pertahankan nilai hilang sebagai tidak tersedia. Verifikasi kontrak sumber sebelum mengubah representasi data hasil.
+
+### 26 Oktober 2026: mulai penjelasan hasil
+
+- Ringkasan operator telah di-commit sebagai `40a4e11`.
+- Design Read: detail hasil operasional untuk operator, framed sheet/IBM Plex Sans existing, ENERGY 1 / RHYTHM 1 / MOTION 1. Letakkan volume dan metode sebelum diagnostik, dengan konfigurasi tersimpan dalam disclosure.
+- Probe live `/openapi.json` kembali connection refused. Baca snapshot `../sivera/openapi.json`, schema/routes prediksi, `volume_service.py`, dan tests metode/route. Job menyediakan ID kamera/kalibrasi/ground/skala, parameter grid, serta timestamp sumber. `source_path` adalah key privat; waktu RTSP adalah waktu penerimaan worker, bukan waktu sensor.
+- Grid memakai median tinggi per sel dengan ambang titik, mengecualikan sel kosong/tidak memenuhi syarat, dan memakai luas sel penuh di batas. Convex hull memakai luas hull 2D dikali median tinggi. API tidak memberikan sertifikasi akurasi fisik/metode utama tervalidasi.
+- Tampilkan kedua metode secara terpisah, unit dan metadata API, nilai kosong/invalid sebagai tidak tersedia, serta konteks konfigurasi historis job. Jangan menyimpulkan konfigurasi historis dari resource aktif sekarang.
+- Gunakan endpoint GET existing. Verifikasi regresi detail/polling, mock hasil lengkap/parsial/nol/error, disclosure keyboard, mobile, dan 200% teks sebelum commit berikutnya.
+
+### 26 Oktober 2026: gate penjelasan hasil selesai
+
+- Build/application/Vitest/scoped E2E type-check lulus. Unit: 322 lulus, 22 file. Browser produksi Chromium/Firefox: 112 lulus, 8 live skipped, 0 unexpected/flaky pada report tersimpan.
+- Dua metode dan diagnostik memakai nilai API independen. Source time UTC, private source key sebagai teks, ID historis, confidence nol, invalid/missing/subprecision, partial dan permission recovery mempunyai regresi.
+- Keyboard native-summary, focus trap dua arah, Escape/restoration, body scroll dan scalable reload/disclosure pada teks 200% diperiksa. Inspector 12 state menghasilkan 0 unresolved; 12 raw modal-shadow findings dipertahankan dengan owner-based exception. Lint: 0 FAIL/7 WARN yang dijelaskan.
+- Bukti, lima belas screenshot inspector, gambar 200% kedua browser, kritik tujuh lintasan, interaksi, dan Delivery Gate: [2026-10-26-results-delivery.md](2026-10-26-results-delivery.md).
+- Tahap implementasi 2 sampai 6 selesai untuk frontend. Full regression berikutnya memakai build stabil; verifikasi authenticated readiness, deployment terbaru, inference/artifact/playback/snapshot, worker/model/hardware, dan akurasi fisik tetap pending. Tidak menambah akun/roles/session frontend-only atau push.

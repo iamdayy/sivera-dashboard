@@ -461,11 +461,11 @@
       @update:open="onJobDetailOpenChange"
     >
       <DialogHeader>
-        <DialogTitle>Detail Job Prediksi</DialogTitle>
-        <DialogDescription v-if="selectedJob">Job {{ selectedJob.id.substring(0, 8) }}… · {{ formatSourceType(selectedJob.source_type) }} · {{ formatStatus(selectedJob.status) }}</DialogDescription>
+        <DialogTitle class="mb-0">Detail Job Prediksi</DialogTitle>
       </DialogHeader>
 
-      <DialogContent>
+      <DialogContent class="text-sm">
+      <DialogDescription v-if="selectedJob" class="mb-4">Job {{ selectedJob.id.substring(0, 8) }}… · {{ formatSourceType(selectedJob.source_type) }} · {{ formatStatus(selectedJob.status) }}</DialogDescription>
       <div v-if="loadingJobDetail" class="loading-state" role="status" style="height: 300px;">
         <div class="spinner" aria-hidden="true" />
         Memuat detail job...
@@ -473,7 +473,7 @@
 
       <div v-else-if="jobDetailError" class="space-y-3" role="alert">
         <p class="text-negative">Gagal memuat detail job. {{ jobDetailError }}</p>
-        <Button type="button" variant="outline" class="min-h-11" @click="loadJobDetail(requestedJobId)">Muat Ulang Detail</Button>
+        <Button type="button" variant="outline" class="min-h-11 text-sm" @click="loadJobDetail(requestedJobId)">Muat Ulang Detail</Button>
       </div>
 
       <template v-else-if="selectedJob">
@@ -483,8 +483,8 @@
           <p v-if="isUnfinishedJob(selectedJob.status)" class="text-text-muted">{{ selectedJob.status === 'pending' ? 'Job menunggu worker.' : 'Worker sedang memproses job.' }} Status diperiksa otomatis. Menutup detail tidak membatalkan job.</p>
           <p v-else-if="selectedJob.status === 'failed'" class="text-negative">{{ predictionFailureMessage(selectedJob) }}</p>
           <p v-else-if="selectedJob.status === 'done' && !hasPredictionVolume(selectedJob)" class="text-warning">Job selesai, tetapi hasil volume belum lengkap. Muat ulang detail; bila tetap tidak tersedia, periksa job bersama operator.</p>
-          <p v-else-if="selectedJob.status === 'done'" class="text-text-muted">Job selesai dan hasil volume tersedia. Tinjau hasil serta metode pengukurannya.</p>
-          <Button type="button" variant="outline" class="min-h-11" @click="loadJobDetail(selectedJob.id)">Muat Ulang Detail</Button>
+          <p v-else-if="selectedJob.status === 'done'" class="text-text-muted">Job selesai. Tinjau rincian volume dan metode di bawah.</p>
+          <Button type="button" variant="outline" class="min-h-11 text-sm" @click="loadJobDetail(selectedJob.id)">Muat Ulang Detail</Button>
         </div>
         <div v-if="jobDetailWarnings.length > 0" class="mb-4 rounded-lg border border-warning-border bg-warning-bg/50 p-3" role="status">
           <p class="text-sm font-medium text-warning">Sebagian detail tidak dapat dimuat</p>
@@ -493,7 +493,8 @@
           </ul>
         </div>
 
-        <!-- Job Metadata -->
+        <PredictionResultSummary v-if="selectedJob.status === 'done' || jobVolumes.length > 0" :volumes="jobVolumes" />
+
         <div class="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
           <div>
             <p class="text-sm text-text-muted">Job ID</p>
@@ -508,12 +509,8 @@
             <p class="text-text">{{ formatSourceType(selectedJob.source_type) }}</p>
           </div>
           <div>
-            <p class="text-sm text-text-muted">Model Segmen</p>
-            <p class="text-text">{{ selectedJob.seg_model || 'default' }}</p>
-          </div>
-          <div>
-            <p class="text-sm text-text-muted">Confidence</p>
-            <p class="text-text">{{ selectedJob.seg_conf }}</p>
+            <p class="text-sm text-text-muted">Kamera ID</p>
+            <p class="break-all font-mono text-sm text-text">{{ selectedJob.camera_id }}</p>
           </div>
           <div>
             <p class="text-sm text-text-muted">Dibuat</p>
@@ -523,7 +520,33 @@
             <p class="text-sm text-text-muted">Selesai</p>
             <p class="text-text">{{ formatDate(selectedJob.completed_at) }}</p>
           </div>
+          <div class="sm:col-span-2">
+            <p class="text-sm text-text-muted">{{ selectedJob.source_type === 'upload' ? 'Waktu sumber dari pengunggah' : 'Waktu penerimaan frame oleh worker' }}</p>
+            <p class="text-sm text-text">{{ formatSourceTimestamp(selectedJob.source_ts) }}</p>
+            <p v-if="selectedJob.source_type !== 'upload'" class="mt-1 text-xs text-text-muted">Waktu penerimaan UTC, bukan waktu sensor kamera.</p>
+          </div>
+          <div class="sm:col-span-2 md:col-span-4">
+            <p class="text-sm text-text-muted">Key sumber tersimpan</p>
+            <p class="break-all text-sm text-text">{{ selectedJob.source_path || 'Tidak tersedia' }}</p>
+            <p v-if="selectedJob.source_path" class="mt-1 text-xs text-text-muted">Identitas penyimpanan privat dari job, bukan URL gambar.</p>
+          </div>
         </div>
+
+        <details class="mb-6 rounded-md border border-sheet-border p-4">
+          <summary class="min-h-11 cursor-pointer content-center text-sm font-medium text-text">Konfigurasi job tersimpan</summary>
+          <p class="mt-2 text-sm text-text-muted">ID dan parameter dari job ini. Konfigurasi aktif kamera saat ini dapat berbeda.</p>
+          <dl class="mt-4 grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+            <div><dt class="text-text-muted">Kalibrasi ID</dt><dd class="break-all font-mono">{{ selectedJob.calibration_id || 'Tidak tersedia' }}</dd></div>
+            <div><dt class="text-text-muted">Model ground ID</dt><dd class="break-all font-mono">{{ selectedJob.ground_model_id || 'Tidak tersedia' }}</dd></div>
+            <div><dt class="text-text-muted">Skala kedalaman ID</dt><dd class="break-all font-mono">{{ selectedJob.depth_scale_id || 'Tidak tersedia' }}</dd></div>
+            <div><dt class="text-text-muted">Model segmentasi</dt><dd class="break-all">{{ selectedJob.seg_model || 'Tidak dilaporkan' }}</dd></div>
+            <div><dt class="text-text-muted">Ambang confidence segmentasi</dt><dd class="tabular-nums">{{ formatConfidence(selectedJob.seg_conf) }}</dd></div>
+            <div><dt class="text-text-muted">Ukuran sel permintaan (m)</dt><dd class="tabular-nums">{{ formatMeasurement(selectedJob.volume_cell_m) }}</dd></div>
+            <div><dt class="text-text-muted">Minimum titik per sel</dt><dd class="tabular-nums">{{ formatMeasurement(selectedJob.volume_min_pts_per_cell, 0) }}</dd></div>
+            <div v-if="selectedJob.source_type !== 'upload'"><dt class="text-text-muted">Batas usia frame (detik)</dt><dd class="tabular-nums">{{ formatMeasurement(selectedJob.max_frame_age_sec, 0) }}</dd></div>
+          </dl>
+          <p class="mt-3 text-xs text-text-muted">Confidence segmentasi adalah ambang deteksi, bukan tingkat akurasi volume.</p>
+        </details>
 
         <!-- Image Gallery -->
         <div v-if="jobOutputs.length > 0" class="border-t border-sheet-border pt-6 mb-6">
@@ -556,39 +579,10 @@
               <tbody>
                 <tr v-for="inst in jobInstances" :key="inst.id">
                   <td class="font-medium text-text">{{ inst.cls_name }}</td>
-                  <td class="numeric tabular-nums">{{ (inst.confidence * 100).toFixed(1) }}%</td>
-                  <td class="numeric tabular-nums">{{ inst.volume_m3?.toFixed(3) ?? '-' }}</td>
-                  <td class="numeric tabular-nums">{{ inst.footprint_m2?.toFixed(3) ?? '-' }}</td>
-                  <td class="numeric tabular-nums">{{ inst.height_mean_m?.toFixed(3) ?? '-' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Volume Table -->
-        <div v-if="jobVolumes.length > 0" class="border-t border-sheet-border pt-6">
-          <h3 class="text-sm font-medium text-text mb-4">Estimasi Volume</h3>
-          <div class="table-container">
-            <table class="table" aria-label="Estimasi volume">
-              <thead>
-                <tr>
-                  <th scope="col">Metode</th>
-                  <th scope="col" class="numeric">Volume (m³)</th>
-                  <th scope="col" class="numeric">Volume (L)</th>
-                  <th scope="col" class="numeric">Cell Size (m)</th>
-                  <th scope="col" class="numeric">Grid Cells</th>
-                  <th scope="col" class="numeric">Titik</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="vol in jobVolumes" :key="vol.id">
-                  <td class="font-medium text-text">{{ volumeMethodLabel(vol.method) }}</td>
-                  <td class="numeric tabular-nums">{{ vol.volume_m3.toFixed(3) }}</td>
-                  <td class="numeric tabular-nums">{{ vol.volume_liter.toFixed(0) }}</td>
-                  <td class="numeric tabular-nums">{{ vol.cell_m?.toFixed(3) ?? '-' }}</td>
-                  <td class="numeric tabular-nums">{{ vol.n_cells ?? '-' }}</td>
-                  <td class="numeric tabular-nums">{{ vol.n_points ?? '-' }}</td>
+                  <td class="numeric tabular-nums">{{ formatConfidence(inst.confidence) }}</td>
+                  <td class="numeric tabular-nums">{{ formatMeasurement(inst.volume_m3) }}</td>
+                  <td class="numeric tabular-nums">{{ formatMeasurement(inst.footprint_m2) }}</td>
+                  <td class="numeric tabular-nums">{{ formatMeasurement(inst.height_mean_m) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -635,6 +629,8 @@ import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
 import PredictionReadinessIssues from '@/components/PredictionReadinessIssues.vue'
 import PredictionPollingNotice from '@/components/PredictionPollingNotice.vue'
 import { hasPredictionVolume, isUnfinishedJob, predictionFailureMessage } from '@/lib/prediction-job'
+import { formatMeasurement, formatConfidence, formatSourceTimestamp } from '@/lib/measurement-format'
+import PredictionResultSummary from '@/components/PredictionResultSummary.vue'
 
 import { Brain, Video, AlertCircle, CheckCircle, XCircle, HelpCircle, RefreshCw } from '@lucide/vue'
 
@@ -1086,7 +1082,8 @@ async function loadJobDetail(jobId: string, showLoading = true) {
       jobVolumes.value = volumesResult.value
     } else {
       jobVolumes.value = []
-      jobDetailWarnings.value.push('Estimasi volume belum tersedia atau gagal dimuat.')
+      const error = normalizeApiError(volumesResult.reason)
+      jobDetailWarnings.value.push(`Estimasi volume gagal dimuat. ${error.message}${error.status === 403 ? ' Periksa izin predict:read bersama administrator, lalu muat ulang detail.' : ''}`)
     }
 
     if (isUnfinishedJob(selectedJob.value.status)) {
@@ -1141,12 +1138,6 @@ function formatOutputType(type: string) {
     bev_overlay: 'BEV Overlay',
   }
   return labels[type] || type
-}
-
-function volumeMethodLabel(method: string): string {
-  if (method === 'grid') return 'Grid/Voxel'
-  if (method === 'convex_hull') return 'Convex Hull'
-  return method
 }
 
 function getSourceTypeBadgeClass(type: string): string {
