@@ -165,6 +165,8 @@ const codeMessages: Record<string, string> = {
   prediction_requires_depth_scale: 'Skala kedalaman belum tersedia. Buat dan aktifkan di Skala Kedalaman.',
   depth_scale_prerequisites_changed: 'Konfigurasi aktif berubah. Muat ulang kalibrasi dan referensi tanah; unggah ulang gambar bila model ground berubah.',
   depth_scale_invalid_saved_fit: 'Fit tersimpan tidak layak diaktifkan. Buat skala baru dengan pengukuran yang benar.',
+  depth_scale_identity_missing: 'Skala lama belum memiliki identitas model. Buat skala kedalaman baru.',
+  depth_scale_model_mismatch: 'Weights atau persiapan model depth berubah. Buat skala baru dengan model yang terpasang.',
   depth_scale_poor_fit: 'Fit ditolak karena residual terlalu besar. Periksa titik dan pengukuran kedalaman Z.',
   depth_scale_degenerate_fit: 'Fit tidak dapat dihitung. Gunakan pixel berbeda dengan kedalaman yang bervariasi.',
   depth_scale_pixel_out_of_bounds: 'Titik pengukuran berada di luar preview gambar.',

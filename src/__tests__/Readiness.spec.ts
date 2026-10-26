@@ -39,6 +39,16 @@ afterEach(() => {
 })
 
 describe('prediction readiness (mock API responses)', () => {
+  it.each(['depth_scale_identity_missing', 'depth_scale_model_mismatch', 'depth_scale_invalid_saved_fit'])(
+    'blocks stale scale with recovery for %s', async code => {
+      failures[scalePath] = { status: 409, code, message: 'Scale cannot be used' }
+      expect(await checkReadiness(camera.id)).toMatchObject({
+        ready: false, has_active_ground_model: true, has_active_depth_scale: false,
+        active_depth_scale_id: null, missing: [code],
+      })
+    },
+  )
+
   it('fetches the actual model before deriving readiness and preserves all configuration IDs', async () => {
     const result = await checkReadiness(camera.id)
     expect(result).toEqual({

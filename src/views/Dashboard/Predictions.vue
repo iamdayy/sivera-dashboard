@@ -54,6 +54,16 @@
       </p>
     </div>
 
+    <div v-if="trackedJobId" class="card space-y-2" role="status">
+      <p class="font-medium text-text">Job diterima backend</p>
+      <p class="break-all text-sm text-text-muted">{{ trackedJobId }}</p>
+      <p class="text-sm text-text-muted">Status dan hasil mengikuti job tersimpan. Menutup halaman tidak membatalkan pemrosesan.</p>
+      <Button type="button" variant="outline" class="min-h-11" @click="viewJobDetails(trackedJobId)">Lihat Job Terkirim</Button>
+    </div>
+
+    <PredictionPollingNotice v-for="state in pollingErrors" :key="`${state.cameraId}:${state.jobId}`"
+      :state="state" @retry="retryPolling(state.cameraId, state.jobId)" />
+
     <!-- Prerequisites Panel -->
     <div v-if="selectedCameraId" class="card">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -170,11 +180,11 @@
           <thead>
             <tr>
               <th scope="col">Job ID</th>
-              <th scope="col">Sumber</th>
-              <th scope="col">Model Segmen</th>
+              <th scope="col" class="hidden sm:table-cell">Sumber</th>
+              <th scope="col" class="hidden sm:table-cell">Model Segmen</th>
               <th scope="col">Status</th>
-              <th scope="col">Dibuat</th>
-              <th scope="col">Selesai</th>
+              <th scope="col" class="hidden sm:table-cell">Dibuat</th>
+              <th scope="col" class="hidden sm:table-cell">Selesai</th>
               <th scope="col">Aksi</th>
             </tr>
           </thead>
@@ -200,31 +210,26 @@
             <template v-else>
               <tr v-for="job in predictionJobs" :key="job.id" class="hover:bg-frame">
                 <td class="font-mono text-sm">{{ job.id.substring(0, 8) }}…</td>
-                <td>
+                <td class="hidden sm:table-cell">
                   <Badge :class="getSourceTypeBadgeClass(job.source_type)">
                     {{ formatSourceType(job.source_type) }}
                   </Badge>
                 </td>
-                <td class="text-text-muted">{{ job.seg_model || 'default' }}</td>
+                <td class="hidden text-text-muted sm:table-cell">{{ job.seg_model || 'default' }}</td>
                 <td>
                   <Badge :class="getStatusBadgeClass(displayStatus(job))" class="flex items-center gap-1">
-                    <span v-if="isPolling(job.camera_id, job.id)" class="animate-spin">
-                      <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    </span>
                     {{ formatStatus(displayStatus(job)) }}
                   </Badge>
+                  <p v-if="displayStatus(job) === 'done' && !hasPredictionVolume(job)" class="mt-1 text-sm text-text-muted">Hasil parsial</p>
                 </td>
-                <td class="text-text-muted">{{ formatDate(job.created_at) }}</td>
-                <td class="text-text-muted">{{ job.completed_at ? formatDate(job.completed_at) : '-' }}</td>
+                <td class="hidden text-text-muted sm:table-cell">{{ formatDate(job.created_at) }}</td>
+                <td class="hidden text-text-muted sm:table-cell">{{ job.completed_at ? formatDate(job.completed_at) : '-' }}</td>
                 <td>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    :disabled="job.status === 'processing'"
+                    class="min-h-11"
                     @click="viewJobDetails(job.id)"
                   >
                     Detail
@@ -430,8 +435,9 @@
 
           <div v-if="submitError" class="error-state" role="alert">
             <AlertCircle class="w-5 h-5" aria-hidden="true" />
-            <p class="font-medium text-text">Gagal menjalankan prediksi</p>
+            <p class="font-medium text-text">{{ submitUncertain ? 'Status pengiriman belum diketahui' : 'Gagal menjalankan prediksi' }}</p>
             <p class="text-sm text-text-muted">{{ submitError }}</p>
+            <Button v-if="submitUncertain" type="button" variant="outline" class="min-h-11" @click="isCreateModalOpen = false; fetchPredictionJobs(1)">Periksa Riwayat</Button>
           </div>
 
           <p v-if="!canSubmit && !submitting" id="prediction-submit-help" class="text-sm text-text-muted" role="status">
@@ -451,8 +457,6 @@
     <!-- Job Detail Dialog -->
     <Dialog
       v-model:open="isJobDetailOpen"
-      :show-close-button="!loadingJobDetail"
-      :disabled="loadingJobDetail"
       content-class="max-w-5xl"
       @update:open="onJobDetailOpenChange"
     >
@@ -461,12 +465,27 @@
         <DialogDescription v-if="selectedJob">Job {{ selectedJob.id.substring(0, 8) }}… · {{ formatSourceType(selectedJob.source_type) }} · {{ formatStatus(selectedJob.status) }}</DialogDescription>
       </DialogHeader>
 
+      <DialogContent>
       <div v-if="loadingJobDetail" class="loading-state" role="status" style="height: 300px;">
         <div class="spinner" aria-hidden="true" />
         Memuat detail job...
       </div>
 
+      <div v-else-if="jobDetailError" class="space-y-3" role="alert">
+        <p class="text-negative">Gagal memuat detail job. {{ jobDetailError }}</p>
+        <Button type="button" variant="outline" class="min-h-11" @click="loadJobDetail(requestedJobId)">Muat Ulang Detail</Button>
+      </div>
+
       <template v-else-if="selectedJob">
+        <PredictionPollingNotice v-if="selectedPollingState?.error" :state="selectedPollingState" class="mb-4"
+          @retry="retryPolling(selectedJob.camera_id, selectedJob.id)" />
+        <div class="mb-4 space-y-2 text-sm" role="status">
+          <p v-if="isUnfinishedJob(selectedJob.status)" class="text-text-muted">{{ selectedJob.status === 'pending' ? 'Job menunggu worker.' : 'Worker sedang memproses job.' }} Status diperiksa otomatis. Menutup detail tidak membatalkan job.</p>
+          <p v-else-if="selectedJob.status === 'failed'" class="text-negative">{{ predictionFailureMessage(selectedJob) }}</p>
+          <p v-else-if="selectedJob.status === 'done' && !hasPredictionVolume(selectedJob)" class="text-warning">Job selesai, tetapi hasil volume belum lengkap. Muat ulang detail; bila tetap tidak tersedia, periksa job bersama operator.</p>
+          <p v-else-if="selectedJob.status === 'done'" class="text-text-muted">Job selesai dan hasil volume tersedia. Tinjau hasil serta metode pengukurannya.</p>
+          <Button type="button" variant="outline" class="min-h-11" @click="loadJobDetail(selectedJob.id)">Muat Ulang Detail</Button>
+        </div>
         <div v-if="jobDetailWarnings.length > 0" class="mb-4 rounded-lg border border-warning-border bg-warning-bg/50 p-3" role="status">
           <p class="text-sm font-medium text-warning">Sebagian detail tidak dapat dimuat</p>
           <ul class="mt-1 list-inside list-disc text-sm text-text-muted">
@@ -475,10 +494,10 @@
         </div>
 
         <!-- Job Metadata -->
-        <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div class="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
           <div>
             <p class="text-sm text-text-muted">Job ID</p>
-            <p class="font-mono text-sm text-text">{{ selectedJob.id }}</p>
+            <p class="break-all font-mono text-sm text-text">{{ selectedJob.id }}</p>
           </div>
           <div>
             <p class="text-sm text-text-muted">Status</p>
@@ -503,10 +522,6 @@
           <div v-if="selectedJob.completed_at">
             <p class="text-sm text-text-muted">Selesai</p>
             <p class="text-text">{{ formatDate(selectedJob.completed_at) }}</p>
-          </div>
-          <div v-if="selectedJob.error_msg">
-            <p class="text-sm text-text-muted">Error</p>
-            <p class="text-negative">{{ selectedJob.error_msg }}</p>
           </div>
         </div>
 
@@ -583,15 +598,16 @@
         <div v-if="jobOutputs.length === 0 && jobInstances.length === 0 && jobVolumes.length === 0 && jobDetailWarnings.length === 0" class="empty-state border-t border-sheet-border py-8">
           <Brain class="empty-state-icon" aria-hidden="true" />
           <p class="empty-state-title">Belum ada output untuk job ini</p>
-          <p class="empty-state-description">Job mungkin masih diproses atau gagal. Cek status job di atas.</p>
+          <p class="empty-state-description">{{ isUnfinishedJob(selectedJob.status) ? 'Output akan tersedia setelah pemrosesan selesai.' : 'Backend belum mengembalikan output untuk job ini. Periksa status dan hasil di atas.' }}</p>
         </div>
       </template>
+      </DialogContent>
     </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import { useApiStore } from '@/stores/api'
@@ -617,6 +633,8 @@ import type { Camera, PredictionJob, PredictionOutput, DetectedInstance, VolumeE
 import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
 import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
 import PredictionReadinessIssues from '@/components/PredictionReadinessIssues.vue'
+import PredictionPollingNotice from '@/components/PredictionPollingNotice.vue'
+import { hasPredictionVolume, isUnfinishedJob, predictionFailureMessage } from '@/lib/prediction-job'
 
 import { Brain, Video, AlertCircle, CheckCircle, XCircle, HelpCircle, RefreshCw } from '@lucide/vue'
 
@@ -635,6 +653,7 @@ const loadError = ref('')
 const cameraLoading = ref(false)
 const submitting = ref(false)
 const submitError = ref('')
+const submitUncertain = ref(false)
 const selectedJob = ref<PredictionJob | null>(null)
 const isCreateModalOpen = ref(false)
 const isJobDetailOpen = ref(false)
@@ -647,6 +666,10 @@ const jobInstances = ref<DetectedInstance[]>([])
 const jobVolumes = ref<VolumeEstimate[]>([])
 const jobDetailWarnings = ref<string[]>([])
 const loadingJobDetail = ref(false)
+const jobDetailError = ref('')
+const requestedJobId = ref('')
+let jobListRequestId = 0
+let jobDetailRequestId = 0
 
 const uploadedImage = ref<File | null>(null)
 const prerequisites = ref<PredictionPrerequisites | null>(null)
@@ -679,20 +702,40 @@ const availableOutputs = [
   { value: 'bev_overlay', label: 'BEV Overlay' },
 ]
 
-const { startPolling, isPolling, getPollingStatus, stopPolling } = useJobPolling(
+const notifiedJobs = new Set<string>()
+const jobToastIds = new Set<string | number>()
+function dismissJobNotifications() {
+  for (const id of jobToastIds) toast.dismiss(id)
+  jobToastIds.clear()
+}
+onScopeDispose(dismissJobNotifications)
+
+const { pollingJobs, startPolling, retryPolling, getPollingStatus, stopPolling, reconcileJob } = useJobPolling(
   apiGetPredictionJob,
-  async (updatedJob) => {
-    if (!isActive()) return
-    toast.success('Prediksi selesai', {
-      description: `Job ${updatedJob.id.substring(0, 8)}… ${updatedJob.status === 'done' ? 'berhasil' : 'gagal'}`,
-    })
-    await fetchPredictionJobs(1)
-    if (isJobDetailOpen.value && selectedJob.value?.id === updatedJob.id) {
-      await loadJobDetail(updatedJob.id, false)
+  (updatedJob) => {
+    if (!isActive() || updatedJob.camera_id !== selectedCameraId.value) return
+    predictionJobs.value = predictionJobs.value.map(job => job.id === updatedJob.id ? updatedJob : job)
+    if (selectedJob.value?.id === updatedJob.id) selectedJob.value = updatedJob
+    if (isUnfinishedJob(updatedJob.status)) return
+    if (notifiedJobs.has(updatedJob.id)) return
+    notifiedJobs.add(updatedJob.id)
+    if (isJobDetailOpen.value && requestedJobId.value === updatedJob.id) {
+      void loadJobDetail(updatedJob.id, false)
     }
-  }
+    if (isJobDetailOpen.value || isCreateModalOpen.value) return
+    if (updatedJob.status === 'failed') {
+      jobToastIds.add(toast.error('Prediksi gagal', { description: predictionFailureMessage(updatedJob) }))
+    } else if (hasPredictionVolume(updatedJob)) {
+      jobToastIds.add(toast.success('Prediksi selesai', { description: `Job ${updatedJob.id.substring(0, 8)}… memiliki hasil volume.` }))
+    } else {
+      jobToastIds.add(toast.warning('Hasil prediksi belum lengkap', { description: 'Job selesai tanpa hasil volume lengkap. Buka detail dan muat ulang hasil.' }))
+    }
+  },
 )
 
+const trackedJobId = computed(() => typeof route.query.tracking === 'string' ? route.query.tracking : '')
+const pollingErrors = computed(() => [...pollingJobs.value.values()].filter(state => state.cameraId === selectedCameraId.value && state.error))
+const selectedPollingState = computed(() => selectedJob.value ? getPollingStatus(selectedJob.value.camera_id, selectedJob.value.id) : undefined)
 const hasApiKey = computed(() => apiStore.hasApiKey)
 const selectedCamera = computed(() => cameras.value.find(c => c.id === selectedCameraId.value))
 
@@ -707,6 +750,7 @@ const prerequisitesModalClass = computed(() => {
 })
 
 const submitBlockedReason = computed(() => {
+  if (submitUncertain.value) return 'Periksa riwayat untuk memastikan apakah job tersimpan sebelum membuat prediksi baru.'
   if (!selectedCameraId.value || !hasApiKey.value) return 'Pilih kamera dan atur akses API terlebih dahulu.'
   if (checkingPrerequisites.value) return 'Tunggu pemeriksaan prasyarat selesai.'
   if (prerequisitesError.value) return 'Prasyarat belum dapat diverifikasi. Coba lagi atau periksa akses API di Pengaturan.'
@@ -761,6 +805,8 @@ async function fetchCameras() {
 async function fetchPredictionJobs(page = 1, append = false) {
   if (!selectedCameraId.value || !hasApiKey.value) return
   const cameraId = selectedCameraId.value
+  const requestId = ++jobListRequestId
+  const before = new Map([...pollingJobs.value].map(([key, state]) => [key, state.job]))
 
   if (append) {
     loadingMoreJobs.value = true
@@ -771,22 +817,25 @@ async function fetchPredictionJobs(page = 1, append = false) {
 
   try {
     const response = await apiListPredictionJobs(cameraId, page)
-    if (!isActive() || cameraId !== selectedCameraId.value) return
+    if (!isActive() || cameraId !== selectedCameraId.value || requestId !== jobListRequestId) return
 
-    const items = append ? [...predictionJobs.value, ...response.items] : response.items
-    const uniqueJobs = new Map(items.map(job => [job.id, job]))
-    predictionJobs.value = Array.from(uniqueJobs.values())
+    const incoming = response.items.map(job => {
+      const current = getPollingStatus(cameraId, job.id)?.job
+      return current && current !== before.get(`${cameraId}:${job.id}`) ? current : reconcileJob(job)
+    })
+    const items = append ? [...predictionJobs.value, ...incoming] : incoming
+    predictionJobs.value = [...new Map(items.map(job => [job.id, job])).values()]
     jobsPage.value = response.page
     jobsTotal.value = response.total
     jobsTotalPages.value = response.total_pages
 
-    for (const job of response.items) {
+    for (const job of predictionJobs.value) {
       if (job.status === 'pending' || job.status === 'processing') {
-        startPolling(cameraId, job.id)
+        startPolling(cameraId, job.id, job.status)
       }
     }
   } catch (error) {
-    if (!isActive()) return
+    if (!isActive() || cameraId !== selectedCameraId.value || requestId !== jobListRequestId) return
     if (append) {
       toast.error('Gagal memuat job berikutnya', { description: errorMessage(error) })
     } else {
@@ -794,7 +843,7 @@ async function fetchPredictionJobs(page = 1, append = false) {
       toast.error('Gagal memuat data prediksi')
     }
   } finally {
-    if (isActive() && cameraId === selectedCameraId.value) {
+    if (isActive() && cameraId === selectedCameraId.value && requestId === jobListRequestId) {
       loading.value = false
       loadingMoreJobs.value = false
     }
@@ -825,7 +874,7 @@ async function onCameraChange() {
 
   const query: Record<string, string> = {}
   for (const [key, value] of Object.entries(route.query)) {
-    if (key !== 'job' && typeof value === 'string') query[key] = value
+    if (key !== 'job' && key !== 'tracking' && typeof value === 'string') query[key] = value
   }
   if (selectedCameraId.value) query.camera = selectedCameraId.value
   await router.replace({ query })
@@ -865,6 +914,17 @@ async function checkPrerequisites() {
 }
 
 watch(selectedCameraId, () => {
+  stopPolling()
+  dismissJobNotifications()
+  notifiedJobs.clear()
+  jobListRequestId += 1
+  jobDetailRequestId += 1
+  loadingJobDetail.value = false
+  jobDetailError.value = ''
+  isJobDetailOpen.value = false
+  requestedJobId.value = ''
+  selectedJob.value = null
+  predictionJobs.value = []
   prerequisiteRequestId += 1
   prerequisites.value = null
   prerequisitesError.value = ''
@@ -877,6 +937,7 @@ watch(() => predForm.value.source_type, () => {
 
 const openCreateModal = async () => {
   if (!selectedCameraId.value) return
+  dismissJobNotifications()
   predForm.value = {
     source_type: 'upload',
     seg_conf: 0.25,
@@ -887,6 +948,7 @@ const openCreateModal = async () => {
   }
   uploadedImage.value = null
   submitError.value = ''
+  submitUncertain.value = false
   isCreateModalOpen.value = true
   await checkPrerequisites()
 }
@@ -925,6 +987,7 @@ async function submitPrediction() {
 
   submitting.value = true
   submitError.value = ''
+  let sent = false
   try {
     const pre = await checkPrerequisites()
     if (!isActive() || cameraId !== selectedCameraId.value || sourceType !== predForm.value.source_type) return
@@ -942,23 +1005,27 @@ async function submitPrediction() {
     }
     if (!isActive() || cameraId !== selectedCameraId.value || sourceType !== predForm.value.source_type) return
 
+    sent = true
     const result = await apiSubmitPrediction(cameraId, payload)
+    sent = false
     if (!isActive() || cameraId !== selectedCameraId.value) return
 
-    toast.success('Prediksi berhasil dikirim', {
+    jobToastIds.add(toast.info('Prediksi berhasil dikirim', {
       description: `Job ID: ${result.job_id}`,
-    })
+    }))
     isCreateModalOpen.value = false
     uploadedImage.value = null
+    startPolling(cameraId, result.job_id, result.status)
+    await router.replace({ query: { ...route.query, camera: cameraId, tracking: result.job_id } })
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     await fetchPredictionJobs(1)
-    startPolling(cameraId, result.job_id)
   } catch (error: unknown) {
-    if (!isActive()) return
+    if (!isActive() || cameraId !== selectedCameraId.value) return
     const err = normalizeApiError(error)
-    submitError.value = err.message
-    toast.error('Gagal menjalankan prediksi', {
-      description: err.message,
-    })
+    submitUncertain.value = sent && (err.status === null || err.status >= 500)
+    submitError.value = submitUncertain.value
+      ? 'Konfirmasi backend tidak diterima. Job mungkin sudah tersimpan. Periksa riwayat sebelum mengirim ulang; permintaan tidak diulang otomatis.'
+      : err.message
   } finally {
     submitting.value = false
   }
@@ -967,8 +1034,13 @@ async function submitPrediction() {
 async function loadJobDetail(jobId: string, showLoading = true) {
   const cameraId = selectedCameraId.value
   if (!cameraId) return
+  const requestId = ++jobDetailRequestId
+  const before = getPollingStatus(cameraId, jobId)?.job
+  requestedJobId.value = jobId
+  jobDetailError.value = ''
 
   if (showLoading) {
+    dismissJobNotifications()
     loadingJobDetail.value = true
     isJobDetailOpen.value = true
     selectedJob.value = null
@@ -985,14 +1057,16 @@ async function loadJobDetail(jobId: string, showLoading = true) {
       apiGetPredictionInstances(cameraId, jobId),
       apiGetPredictionVolumes(cameraId, jobId),
     ])
-    if (!isActive() || cameraId !== selectedCameraId.value) return
+    if (!isActive() || cameraId !== selectedCameraId.value || requestId !== jobDetailRequestId || !isJobDetailOpen.value) return
 
     if (jobResult.status === 'rejected') {
-      toast.error('Gagal memuat detail job', { description: errorMessage(jobResult.reason) })
+      jobDetailError.value = errorMessage(jobResult.reason)
       return
     }
 
-    selectedJob.value = jobResult.value
+    const current = getPollingStatus(cameraId, jobId)?.job
+    selectedJob.value = current && current !== before ? current : reconcileJob(jobResult.value)
+    predictionJobs.value = predictionJobs.value.map(job => job.id === jobId ? selectedJob.value! : job)
 
     if (outputsResult.status === 'fulfilled') {
       jobOutputs.value = outputsResult.value
@@ -1015,12 +1089,11 @@ async function loadJobDetail(jobId: string, showLoading = true) {
       jobDetailWarnings.value.push('Estimasi volume belum tersedia atau gagal dimuat.')
     }
 
-    isJobDetailOpen.value = true
-    if (jobResult.value.status === 'pending' || jobResult.value.status === 'processing') {
-      startPolling(cameraId, jobId)
+    if (isUnfinishedJob(selectedJob.value.status)) {
+      startPolling(cameraId, jobId, selectedJob.value.status)
     }
   } finally {
-    if (showLoading && isActive()) loadingJobDetail.value = false
+    if (isActive() && requestId === jobDetailRequestId) loadingJobDetail.value = false
   }
 }
 
@@ -1039,7 +1112,10 @@ async function viewJobDetails(jobId: string) {
 
 function onJobDetailOpenChange(open: boolean) {
   isJobDetailOpen.value = open
-  if (open || typeof route.query.job !== 'string') return
+  if (open) return
+  jobDetailRequestId += 1
+  loadingJobDetail.value = false
+  if (typeof route.query.job !== 'string') return
 
   const query: Record<string, string> = {}
   for (const [key, value] of Object.entries(route.query)) {
@@ -1129,10 +1205,7 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-const displayStatus = (job: PredictionJob) => {
-  const pollingStatus = getPollingStatus(job.camera_id, job.id)
-  return pollingStatus ?? job.status
-}
+const displayStatus = (job: PredictionJob) => job.status
 
 onMounted(() => {
   if (hasApiKey.value) void initialize()
@@ -1144,6 +1217,8 @@ async function initialize() {
 
   await Promise.all([fetchPredictionJobs(1), checkPrerequisites()])
   if (!isActive()) return
+
+  if (trackedJobId.value) startPolling(selectedCameraId.value, trackedJobId.value)
 
   const jobQuery = typeof route.query.job === 'string' ? route.query.job : ''
   if (jobQuery) {
@@ -1179,9 +1254,23 @@ watch(() => apiStore.hasApiKey, (newVal) => {
   }
 })
 
-watch(() => route.query.job, (value) => {
-  if (typeof value !== 'string' || !value) return
-  if (value === selectedJob.value?.id || loadingJobDetail.value) return
-  void loadJobDetail(value, true)
+watch(() => [route.query.camera, route.query.job, route.query.tracking], ([cameraId, jobId]) => {
+  if (typeof cameraId === 'string' && cameraId !== selectedCameraId.value && cameras.value.some(camera => camera.id === cameraId)) {
+    selectedCameraId.value = cameraId
+    void fetchPredictionJobs(1)
+    void checkPrerequisites()
+  }
+  if (!selectedCameraId.value) return
+  if (trackedJobId.value) startPolling(selectedCameraId.value, trackedJobId.value)
+  if (typeof jobId !== 'string' || !jobId) {
+    if (isJobDetailOpen.value) {
+      isJobDetailOpen.value = false
+      jobDetailRequestId += 1
+      loadingJobDetail.value = false
+    }
+    return
+  }
+  if (jobId === selectedJob.value?.id && isJobDetailOpen.value) return
+  void loadJobDetail(jobId, true)
 })
 </script>

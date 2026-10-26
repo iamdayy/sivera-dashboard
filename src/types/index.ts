@@ -187,6 +187,9 @@ export type PredictionPrerequisiteCode =
   | 'ground_model_calibration_mismatch'
   | 'ground_model_reference_mismatch'
   | 'depth_scale_context_mismatch'
+  | 'depth_scale_identity_missing'
+  | 'depth_scale_model_mismatch'
+  | 'depth_scale_invalid_saved_fit'
   | 'calibration_intrinsics_missing'
   | 'calibration_invalid_intrinsics'
 
@@ -291,11 +294,22 @@ export interface SnapshotResponse {
   image_url: string
 }
 
+export interface DepthModelIdentity {
+  sha256: string
+  ultralytics_version: string
+  torch_version: string
+  opencv_version: string
+  preprocessing_version: string
+  depth_convention: 'camera_axis_z'
+  imgsz: number
+}
+
 export interface DepthScale {
   id: string
   camera_id: string
   ground_model_id: string
   depth_model: string
+  model_identity?: DepthModelIdentity | null
   scale_s: number
   offset_b: number
   residuals: number[] | null
@@ -321,9 +335,9 @@ export interface DepthMeasurement {
 export interface DepthScaleCreate {
   test_image?: string
   depth_model?: string
-  known_distances: DepthMeasurement[]
   clip_min_m?: number
   clip_max_m?: number
+  known_distances: DepthMeasurement[]
 }
 
 export interface DepthScaleImageResponse {

@@ -67,7 +67,7 @@ When a step is blocked, explain why and provide a direct route to the relevant s
 6. Label volume methods distinctly (for example, grid/voxel and convex hull) and show `m³` and `L` when available.
 7. Convert technical errors into readable messages without exposing stack traces.
 
-**Current backend contract (live OpenAPI rechecked 25 October 2026):** `upload`, `rtsp_frame`, and `latest_rtsp` create persisted queued jobs with HTTP 202. History and status are read from prediction GET endpoints. RTSP sources omit file/timestamp. `GET /api/v1/cameras/{camera_id}/ground-models/{ground_model_id}/depth-scales/active` returns the active scale, including `depth_model`. The general OpenAPI description still incorrectly says no public depth-scale endpoint exists; use the verified paths/schema. Frontend stream/capture/snapshot/prediction workflows are being integrated in stages; code or mock signaling is not evidence of live playback or inference. No public worker or model-file/version readiness check was found.
+**Backend contract:** `upload`, `rtsp_frame`, and `latest_rtsp` create persisted queued jobs with HTTP 202. History and status are read from prediction GET endpoints. RTSP sources omit file/timestamp. `GET /api/v1/cameras/{camera_id}/ground-models/{ground_model_id}/depth-scales/active` returns the active scale. The 26 October source/OpenAPI alignment adds weights/preprocessing identity validation to this endpoint and corrects the stale general description. There is no worker-health readiness endpoint. Mock signaling remains insufficient evidence of playback or inference.
 
 Historical limitation: the previous handler rejected RTSP and ran upload prediction synchronously despite HTTP 202. This remains a record of the old implementation, not a description of the MediaMTX backend.
 
@@ -146,7 +146,24 @@ Keep domain logic out of presentation components where practical. Every data vie
 
 The previous `src/services/readiness.ts` checked a ground-model ID before fetching it and never populated that ID. The resolver now reads the active resources before deriving readiness, retains their returned IDs, and checks calibration/reference/model compatibility through `measurementContext.ts`. `checkPredictionPrerequisites` is an alias of the same readiness function, not a second set of rules. Missing configuration is distinct from API/network failures. Intrinsics requirements follow the selected prediction source; legacy uploads need an already-undistorted image. Analysis clears stale readiness and rechecks it before submission. Live `/health` and `/openapi.json` were read successfully on 25 October 2026 and reconciled with backend routes/tests. Resource requests with a configured API key/camera remain unverified live. Regression tests use mock responses and do not establish workers, model files/versions, physical accuracy, or hardware behavior.
 
-Readiness here means compatible configuration for the chosen source, not inference availability. `DepthScaleResponse` exposes a model name but no model version or file-availability signal. Depth-scale create currently accepts only `known_distances` and fits against the first calibration image; points selected on the frontend's uploaded preview are not bound to that input. Resolve that identity mismatch before claiming the scale-creation journey works.
+Readiness means compatible configuration for the chosen source. In the 25 October contract, `DepthScaleResponse` exposed only a model name and creation ignored the uploaded preview source. The 26 October alignment below resolves those code defects; it does not establish worker availability or physical measurement accuracy.
+
+### Depth source and identity alignment (26 October 2026)
+
+- `DepthScaleCreate` supports optional `test_image`, `depth_model`, and clipping. The form passes the uploaded source key with its undistorted pixel measurements and waits for preview decoding. Without a source key, the backend uses the first registered calibration image. Blank model/clipping fields use backend defaults. Model names are limited to 100 characters; each clipping bound is independently optional and must be positive, finite, ordered, and contain the measured Z values.
+- `DepthScaleResponse.model_identity` carries weights SHA256, dependency/preprocessing versions, camera-axis convention, and inference size. Legacy identity may be null. Active GET validates it; readiness maps 409 missing identity/model mismatch/invalid saved fit to creation of a new scale. Model unavailable remains a 503 service failure. A successful check does not certify accuracy.
+- Opening `/dashboard/depth-scales?camera=<UUID>` now fetches the active context on initialization. Browser regression covers upload, authenticated preview, three points, source-bound creation, and completion at 390/768/1280 px with mocked API responses. Connection loss or persistence uncertainty blocks resubmission in the form and offers reconciliation through the stored scale list.
+- Backend revisions 006/007 add identity/provenance and preview registration. Legacy scales need measured refitting and unregistered previews need regeneration. Physical files can outlive their metadata. Coordinate deployment with `../sivera`; the reproducible contract lives at `../sivera/openapi.json`.
+
+Rencana dan hasil verifikasi: `.agents/plan/2026-10-26-depth-contract-alignment.md`.
+
+### Persisted job handling (26 October 2026)
+
+- Accepted IDs survive refresh in `tracking=<job_id>`; `job=<job_id>` opens detail. Each job has independent, non-overlapping status reads with bounded transient backoff. Permission/nontransient errors pause automatic polling and offer manual retry without changing the last backend status to failed.
+- Camera/connection changes fence stale responses. Fresh history/detail can replace cached partial results. Closing a loading dialog prevents a late response from reopening it.
+- `done` only gets a success notification when a recognized method supplies finite, nonnegative `volume_m3` and `volume_liter`. Missing volume is a partial result with detail reload. Worker failures show actionable messages. Status notifications defer to inline state while a prediction dialog is open.
+- Ambiguous POST failures never trigger automatic resubmission; the form explains that a job may exist and offers history inspection. Browser aborts do not cancel backend jobs. Phone history prioritizes ID, status, and detail; remaining metadata is in detail.
+- Verification and the scoped visual gate are recorded in `.agents/plan/2026-10-26-p1-delivery.md`. The current live backend probe was refused; frontend mock tests do not establish live inference.
 
 ### UX objective
 

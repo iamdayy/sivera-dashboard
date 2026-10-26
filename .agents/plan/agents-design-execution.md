@@ -17,8 +17,8 @@ Tanggal mulai: 25 Oktober 2026. Acuan: `AGENTS.md`, `DESIGN.md`, implementasi fr
 ### 1. Verifikasi kontrak
 
 - [x] Cocokkan live `/openapi.json` dengan routes, schemas, dan tests backend untuk readiness.
-- [ ] Verifikasi endpoint, multipart, status job, scope akses, dan aturan intrinsics per sumber.
-- [ ] Konfirmasi gambar tempat titik depth-scale dipilih sama dengan input fit backend.
+- [x] Verifikasi endpoint, multipart, status job, scope akses, dan aturan intrinsics per sumber pada source/OpenAPI lokal; deployment terbaru masih perlu diuji live.
+- [x] Konfirmasi binding gambar titik depth-scale ke input fit pada kontrak source dan tes frontend; inference nyata belum diverifikasi.
 - Gunakan `X-API-Key`, origin tanpa prefix, dan `cameraPath()` tepat satu kali.
 - Kontrak yang belum terverifikasi bukan bukti integrasi tersedia. Catat dependency backend tanpa meniru algoritmanya.
 
@@ -40,21 +40,21 @@ File utama: `src/services/depthScales.ts`, `src/lib/depth-scale-form.ts`, `src/c
 
 - [x] Resolve skala aktif untuk ground model yang tepat dan identitas model yang benar-benar tersedia dari kontrak (`depth_model`, tanpa mengarang versi/file availability).
 - [x] Bedakan 404 resource aktif, 401/403, gangguan jaringan, dan konfigurasi berubah dalam pemeriksaan readiness.
-- [ ] Selaraskan types, payload, dan kontrol formulir dengan schema deployed.
-- [ ] Pulihkan validasi Z: kosong/nonfinite/tidak positif, titik duplikat, koordinat di luar gambar.
-- [ ] Pastikan identitas preview dan input fit sebelum menyatakan workflow benar.
-- [ ] Setelah timeout POST, rekonsiliasi hasil tersimpan sebelum menawarkan pengiriman ulang.
+- [x] Selaraskan types, payload, dan kontrol formulir dengan schema 26 Oktober di source/OpenAPI lokal; verifikasi deployment dicatat terpisah.
+- [x] Pulihkan validasi Z: kosong/nonfinite/tidak positif, titik duplikat, koordinat di luar gambar.
+- [x] Kirim identitas source upload bersama titik preview yang berhasil didecode.
+- [x] Setelah timeout POST, blokir pengiriman ulang dalam form dan tawarkan pemeriksaan daftar/skala aktif.
 - [x] Perbarui klaim dokumentasi endpoint hanya setelah deployment dikonfirmasi.
 
 ### 4. P1: lifecycle persisted job dan recovery
 
 File utama: `src/composables/useJobPolling.ts`, `src/services/predictions.ts`, `src/views/Dashboard/Predictions.vue`.
 
-- [ ] Pertahankan `job_id` dari HTTP 202; status pending/processing/done/failed dari GET job.
-- [ ] Polling bertipe, tidak bertumpuk, menolak respons stale, dan menjelaskan kegagalan pemeriksaan status.
-- [ ] Pertahankan kamera/job melalui navigasi dan refresh bila praktis.
-- [ ] Bedakan accepted, berhasil, gagal, dan hasil parsial; tidak ada toast sukses untuk job gagal.
-- [ ] Tes multipart upload/rtsp_frame/latest_rtsp, RTSP tanpa file/timestamp, confidence nol, outputs omitted/[]/subset.
+- [x] Pertahankan `job_id` dari HTTP 202; status pending/processing/done/failed dari GET job.
+- [x] Polling bertipe, tidak bertumpuk, menolak respons stale, dan menjelaskan kegagalan pemeriksaan status.
+- [x] Pertahankan kamera/job melalui query `tracking` dan `job` pada navigasi/refresh.
+- [x] Bedakan accepted, berhasil, gagal, dan hasil parsial; tidak ada toast sukses untuk job gagal.
+- [x] Tes multipart upload/rtsp_frame/latest_rtsp, RTSP tanpa file/timestamp, confidence nol, outputs omitted/[]/subset.
 - Tidak auto-retry POST, mengarang endpoint pembatalan, atau menganggap abort browser membatalkan backend.
 
 ### 5. P1: perjalanan operator
@@ -65,7 +65,7 @@ Alur: Pengaturan akses → Kamera → Kalibrasi → Referensi Tanah → Skala Ke
 - [x] Link setup membawa konteks kamera; readiness diperiksa ulang setelah kembali ke Analisis.
 - [ ] Pisahkan health, akses, stream runtime, frame freshness, readiness, dan status job.
 - [ ] Lengkapi loading, empty, blocked, error, processing, success, serta partial-result.
-- [ ] Gunakan riwayat backend; jangan mensimulasikan persistence/auth/permissions.
+- [x] Gunakan GET riwayat backend dan paginasi; tidak mensimulasikan persistence/auth/permissions.
 
 ### 6. P2: hasil dan visual
 
@@ -250,4 +250,10 @@ Craftsmanship dan Quality Locks:
 3. Lanjutkan perjalanan operator dan result explainability sesuai checklist di atas, dengan regression tests per tahap.
 4. Jalankan authenticated readiness dan alur pengukuran live saat key, kamera kompatibel, file/versi model, worker, dan hardware tersedia. Playback, snapshots, inference, serta akurasi fisik belum terverifikasi.
 
-Perubahan belum di-commit atau di-push. `src/components/ui/Dialog.vue` tidak diubah; cacat baseline dicatat untuk pekerjaan terpisah, tanpa melemahkan assertions.
+P0 telah di-commit sebagai `be511a5`. Catatan di atas adalah bukti tahap P0, bukan status akhir P1. Belum ada push. `src/components/ui/Dialog.vue` tidak diubah; cacat baseline dicatat untuk pekerjaan terpisah, tanpa melemahkan assertions.
+
+### 26 Oktober 2026: P1 depth scale dan persisted job
+
+Implementasi tahap 3/4 selesai untuk frontend. Bukti, file, batas live, kritik visual, dan Delivery Gate ada di [2026-10-26-p1-delivery.md](2026-10-26-p1-delivery.md). Alignment backend sebelumnya tetap dicatat di [2026-10-26-depth-contract-alignment.md](2026-10-26-depth-contract-alignment.md).
+
+Tahap berikutnya adalah Ringkasan untuk operator baru: satu tindakan setup dari readiness yang sudah ada, konteks kamera pada navigasi, serta status konfigurasi stream yang tidak menyatakan runtime aktif. Auth tetap mengikuti kontrak API key existing.

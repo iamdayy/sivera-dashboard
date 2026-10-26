@@ -26,10 +26,10 @@ const previewReady = ref(false)
 const error = ref('')
 const uncertain = ref(false)
 const busy = computed(() => uploading.value || computing.value || previewLoading.value)
-const validation = computed(() => image.value ? depthScaleFormErrors(form, image.value.width, image.value.height) : [])
-// test_image is optional - backend defaults to first calibration image
-// canSubmit no longer requires uploaded image; only needs valid points and no errors
-const canSubmit = computed(() => !busy.value && !uncertain.value && validation.value.length === 0 && form.points.length >= 3)
+const fitWidth = computed(() => (image.value ? image.value.width : props.context.calibration.resolution_w ?? 0))
+const fitHeight = computed(() => (image.value ? image.value.height : props.context.calibration.resolution_h ?? 0))
+const validation = computed(() => depthScaleFormErrors(form, fitWidth.value, fitHeight.value))
+const canSubmit = computed(() => !busy.value && !uncertain.value && (!image.value || previewReady.value) && validation.value.length === 0 && form.points.length >= 3)
 const modern = computed(() => props.context.calibration.k_original !== null && !!props.context.calibration.resolution_w && !!props.context.calibration.resolution_h)
 
 watch(busy, value => emit('busy', value))
@@ -90,7 +90,7 @@ async function upload(event: Event) {
 
 async function submit() {
   if (!canSubmit.value) return
-  const payload = depthScalePayload(form, image.value?.width ?? 0, image.value?.height ?? 0)
+  const payload = depthScalePayload(form, fitWidth.value, fitHeight.value, image.value?.test_image)
   computing.value = true
   error.value = ''
   let sent = false
@@ -109,7 +109,7 @@ async function submit() {
 </script>
 
 <template>
-  <form class="min-w-0 space-y-6 rounded-lg border p-4 sm:p-6" aria-labelledby="depth-form-title"
+  <form class="min-w-0 space-y-6 rounded-lg border p-4 sm:p-6 [&_button]:min-h-11 [&_input]:min-h-11" aria-labelledby="depth-form-title"
     @submit.prevent="submit">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h2 id="depth-form-title" class="text-lg font-semibold">Buat Skala Kedalaman</h2>
@@ -128,19 +128,29 @@ async function submit() {
             modern
               ?
               `Opsional. Default: gambar kalibrasi pertama. Jika diunggah, gunakan gambar raw pada dimensi
-          kalibrasi ${context.calibration.resolution_w} x ${context.calibration.resolution_h} pixel. Backend melakukan
-          undistortion.`
+            kalibrasi ${props.context.calibration.resolution_w} x ${props.context.calibration.resolution_h} pixel. Backend melakukan
+            undistortion. Pengukuran pada preview dipasangkan dengan gambar yang diunggah.`
               :
-              'Opsional. Default: gambar kalibrasi pertama.'
+              'Default: gambar kalibrasi pertama. Untuk kalibrasi legacy, unggah gambar yang sudah di-undistort pada dimensi kamera.'
           }}
         </p>
       </div>
       <div class="space-y-2">
         <Label for="depth-model">File Model Depth (opsional)</Label>
-        <Input id="depth-model" :disabled="busy || uncertain" maxlength="200"
+        <Input id="depth-model" v-model="form.depth_model" :disabled="busy || uncertain" maxlength="100"
           placeholder="yolo26n-depth.pt (default backend)" aria-describedby="depth-model-help" />
-        <p id="depth-model-help" class="text-sm text-muted-foreground">Opsional. Default: yolo26n-depth.pt. Nama file
-          .pt yang sudah terpasang di backend. Ketersediaannya diperiksa backend.</p>
+        <p id="depth-model-help" class="text-sm text-muted-foreground">Opsional. Nama file .pt yang sudah terpasang di backend, tanpa path atau URL.</p>
+      </div>
+    </div>
+
+    <div class="grid min-w-0 gap-4 md:grid-cols-2">
+      <div class="space-y-2">
+        <Label for="depth-clip-min">Batas Minimum (m, opsional)</Label>
+        <Input id="depth-clip-min" v-model="form.clip_min_m" inputmode="decimal" :disabled="busy || uncertain" placeholder="0.1" />
+      </div>
+      <div class="space-y-2">
+        <Label for="depth-clip-max">Batas Maksimum (m, opsional)</Label>
+        <Input id="depth-clip-max" v-model="form.clip_max_m" inputmode="decimal" :disabled="busy || uncertain" placeholder="50" />
       </div>
     </div>
 
@@ -157,27 +167,16 @@ async function submit() {
         @click="loadPreview">Muat Ulang Preview</Button>
     </div>
 
-    <!-- <div class="grid gap-4 sm:max-w-lg sm:grid-cols-2">
-      <div class="space-y-2">
-        <Label for="depth-clip-min">Batas Minimum (m) — opsional</Label>
-        <Input id="depth-clip-min" v-model="form.clip_min_m" inputmode="decimal" :disabled="busy || uncertain" placeholder="0.1 (default)" />
-      </div>
-      <div class="space-y-2">
-        <Label for="depth-clip-max">Batas Maksimum (m) — opsional</Label>
-        <Input id="depth-clip-max" v-model="form.clip_max_m" inputmode="decimal" :disabled="busy || uncertain" placeholder="50 (default)" />
-      </div>
-    </div> -->
-
-    <ul v-if="validation.length && image && previewReady" class="space-y-1 text-sm text-muted-foreground"
+    <ul v-if="validation.length" class="space-y-1 text-sm text-muted-foreground"
       aria-label="Validasi pengukuran">
       <li v-for="message in validation" :key="message">{{ message }}</li>
     </ul>
-    <div v-if="error" role="alert" class="space-y-3 rounded-md border border-destructive/40 p-3">
-      <p class="text-sm text-destructive">{{ error }}</p>
+    <div v-if="error" role="alert" class="space-y-3 rounded-md border border-negative-border p-3">
+      <p class="text-sm text-negative">{{ error }}</p>
       <Button v-if="uncertain" type="button" variant="outline" @click="emit('reconcile')">Periksa Hasil</Button>
     </div>
     <div class="flex flex-wrap items-center gap-3 border-t pt-4">
-      <Button type="submit" :disabled="!canSubmit" :aria-busy="computing">
+      <Button type="submit" class="btn btn-primary" :disabled="!canSubmit" :aria-busy="computing">
         {{
           computing
             ? 'Menghitung Skala...'

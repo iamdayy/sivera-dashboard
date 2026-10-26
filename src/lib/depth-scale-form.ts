@@ -8,20 +8,18 @@ export interface MeasurementInput {
 }
 
 export interface DepthScaleFormInput {
-  // depth_model: string
-  // clip_min_m: string
-  // clip_max_m: string
   points: MeasurementInput[]
-  // Optional: image URL key will be set after upload, or default to first calibration image
-  // test_image?: string
+  depth_model: string
+  clip_min_m: string
+  clip_max_m: string
 }
 
 export function createDepthScaleForm(): DepthScaleFormInput {
   return {
-    // depth_model: 'yolo26n-depth.pt',
-    // clip_min_m: '0.1',
-    // clip_max_m: '50',
-    points: []
+    points: [],
+    depth_model: '',
+    clip_min_m: '',
+    clip_max_m: '',
   }
 }
 
@@ -33,24 +31,22 @@ function numeric(value: string): number | null {
 
 export function depthScaleFormErrors(form: DepthScaleFormInput, width: number, height: number): string[] {
   const errors: string[] = []
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    errors.push('Dimensi gambar belum valid. Muat ulang preview sebelum mengirim pengukuran.')
+  }
 
-  // depth_model is optional - only validate if provided
-  // const model = form.depth_model?.trim()
-  // if (model && (model.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\.pt$/.test(model))) {
-  //   errors.push('Jika diisi, nama file model harus .pt yang terpasang di backend, tanpa path atau URL.')
-  // }
+  const model = form.depth_model.trim()
+  if (model && (model.length > 100 || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\.pt$/.test(model))) {
+    errors.push('Jika diisi, nama file model harus .pt yang terpasang di backend, tanpa path atau URL.')
+  }
 
-  // clip_min_m/clip_max_m are optional - only validate if provided
-  // const min = numeric(form.clip_min_m)
-  // const max = numeric(form.clip_max_m)
-  // if (min !== null && max !== null) {
-  //   if (min < 0.01 || min > 10 || max < 5 || max > 200 || min >= max) {
-  //     errors.push('Batas minimum harus 0,01–10 m, maksimum 5–200 m, dan minimum lebih kecil dari maksimum.')
-  //   }
-  // } else if (min !== null || max !== null) {
-  //   // One provided without the other
-  //   errors.push('Jika diisi, baik batas minimum maupun maksimum harus diisi keduanya.')
-  // }
+  const min = form.clip_min_m.trim() ? numeric(form.clip_min_m) : 0.1
+  const max = form.clip_max_m.trim() ? numeric(form.clip_max_m) : 50
+  if (min === null || max === null || min <= 0 || max <= 0) {
+    errors.push('Batas kedalaman harus berupa angka terhingga lebih besar dari 0 meter.')
+  } else if (min >= max) {
+    errors.push('Batas minimum harus lebih kecil dari maksimum (default 0,1 dan 50 m).')
+  }
 
   if (form.points.length < 3 || form.points.length > 100) errors.push('Gunakan minimal 3 dan maksimal 100 titik pengukuran.')
   const seen = new Set<string>()
@@ -59,18 +55,25 @@ export function depthScaleFormErrors(form: DepthScaleFormInput, width: number, h
     const x = numeric(point.x)
     const y = numeric(point.y)
     const z = numeric(point.distance_m)
-    if (x === null || y === null || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) {
+    if (x === null || y === null || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0) {
       errors.push(`Titik ${index + 1}: koordinat harus pixel integer di dalam gambar.`)
+    } else if (width > 0 && height > 0 && (x >= width || y >= height)) {
+      errors.push(`Titik ${index + 1}: koordinat di luar dimensi gambar (${width} × ${height}).`)
     } else {
       const key = `${x},${y}`
       if (seen.has(key)) errors.push(`Titik ${index + 1}: pixel sudah digunakan.`)
       seen.add(key)
     }
-    // const min = numeric(form.clip_min_m)
-    // const max = numeric(form.clip_max_m)
-    // if (z === null || z <= 0 || (min !== null && z < min) || (max !== null && z > max)) {
-    //   errors.push(`Titik ${index + 1}: isi kedalaman Z positif dalam rentang clip (m).`)
-    // } else depths.push(z)
+    if (z === null || !Number.isFinite(z)) {
+      errors.push(`Titik ${index + 1}: isi kedalaman Z (m) harus berupa angka terdefinisi.`)
+    } else if (z <= 0) {
+      errors.push(`Titik ${index + 1}: kedalaman Z harus lebih besar dari 0 meter.`)
+    } else {
+      if (min !== null && max !== null && (z < min || z > max)) {
+        errors.push(`Titik ${index + 1}: kedalaman Z harus berada dalam batas ${min}–${max} m.`)
+      }
+      depths.push(z)
+    }
   })
   if (depths.length >= 3 && Math.max(...depths) - Math.min(...depths) <= 0.001) {
     errors.push('Gunakan titik dengan kedalaman yang bervariasi, bukan semua pada kedalaman yang sama.')
@@ -78,20 +81,17 @@ export function depthScaleFormErrors(form: DepthScaleFormInput, width: number, h
   return errors
 }
 
-export function depthScalePayload(form: DepthScaleFormInput, width: number, height: number): DepthScaleCreate {
+export function depthScalePayload(form: DepthScaleFormInput, width: number, height: number, testImage?: string): DepthScaleCreate {
   const errors = depthScaleFormErrors(form, width, height)
   if (errors.length) throw new Error(errors[0])
-  // test_image is now optional - backend will default to first calibration image
   const known_distances: DepthMeasurement[] = form.points.map(point => ({ x: Number(point.x), y: Number(point.y), distance_m: Number(point.distance_m) }))
   const payload: DepthScaleCreate = { known_distances }
-  // if (form.test_image) payload.test_image = form.test_image
-  // if (form.depth_model?.trim()) payload.depth_model = form.depth_model.trim()
-  // const min = numeric(form.clip_min_m)
-  // const max = numeric(form.clip_max_m)
-  // if (min !== null && max !== null) {
-  // payload.clip_min_m = min
-  // payload.clip_max_m = max
-  // }
+  if (testImage) payload.test_image = testImage
+  if (form.depth_model.trim()) payload.depth_model = form.depth_model.trim()
+  const min = numeric(form.clip_min_m)
+  const max = numeric(form.clip_max_m)
+  if (min !== null) payload.clip_min_m = min
+  if (max !== null) payload.clip_max_m = max
   return payload
 }
 

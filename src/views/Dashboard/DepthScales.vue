@@ -184,7 +184,7 @@ watch(() => route.query.camera, (val) => {
 
 watch(selectedCameraId, (id) => {
   if (id) fetchContext(id)
-})
+}, { immediate: true })
 
 onMounted(fetchCameras)
 </script>

@@ -42,7 +42,7 @@ Check `package.json` if a command fails or scripts change. Do not add Vuetify or
 9. HTTP 202 returns a persisted `job_id`; use the prediction GET endpoints for status and paginated history. Do not invent cancellation/deletion endpoints. Aborting an HTTP request does not cancel backend work.
 10. Render artifact URLs only when returned by the API.
 
-Historical note: before the MediaMTX backend update, this file documented unprefixed camera routes, unimplemented RTSP prediction, and synchronous upload prediction. Those statements describe the old contract, not the current one. Depth-scale readiness still has no public endpoint; do not infer readiness from calibration and ground-model GETs alone.
+Historical note: before the MediaMTX backend update, this file documented unprefixed camera routes, unimplemented RTSP prediction, and synchronous upload prediction. Those statements describe the old contract. Current depth readiness reads `/ground-models/{ground_model_id}/depth-scales/active`; calibration and ground-model GETs alone are insufficient.
 
 ## Security
 
@@ -88,7 +88,7 @@ Historical note: before the MediaMTX backend update, this file documented unpref
 
 Treat these as product-correctness requirements, not optional polish.
 
-1. **Fix the confirmed readiness defect first.** In `src/services/readiness.ts`, `activeGroundModelId` is initialized to `null`, checked before fetching the active ground model, and never assigned. Fetch the active ground model before deriving readiness; populate its ID from the actual response and compare its `calibration_id` with the active calibration. Keep the result consistent with the backend's authoritative prerequisites. Add regression tests for: compatible active calibration + ground model; missing ground model; calibration/model mismatch; missing calibration intrinsics; API/network failure.
+1. **Preserve corrected readiness.** `measurementContext.ts` resolves actual active IDs before `readiness.ts` derives compatibility. The earlier unassigned `activeGroundModelId` defect is fixed. Retain regressions for compatible resources, missing ground model, calibration/model mismatch, missing intrinsics, and API/network failure. DepthScale page initialization must also fetch context when the camera is supplied in the URL query.
 2. **Do not infer depth-scale readiness.** Inspect current live `/openapi.json` and implement readiness through the actual depth-scale endpoint/response contract. Readiness must include a depth scale compatible with the exact ground model and model version required by prediction. Remove stale documentation that says the public API cannot inspect depth-scale readiness only after confirming the deployed contract.
 3. **One source of truth.** Avoid conflicting readiness rules in `readiness.ts`, `predictions.ts`, page components, and stores. Put prerequisite resolution in one typed service/domain function; UI components should render its result rather than reimplementing checks. If backend adds an authoritative readiness endpoint, use it instead of duplicating business logic.
 4. **Never conflate service health and measurement readiness.** Backend health, API-key scope access, camera/stream status, calibration, ground reference/model, depth scale, worker availability, and prediction status are distinct signals. A successful `/health` request is not proof that inference can run.
@@ -97,6 +97,8 @@ Treat these as product-correctness requirements, not optional polish.
 7. **Every relevant view has explicit states.** Implement loading, empty/unconfigured, ready, processing, success, partial-result, permission/network error, and recoverable failure states as appropriate. Disable an unavailable primary action with a nearby explanation and direct link to the missing setup step; do not rely on color alone.
 8. **Evidence discipline.** Mock tests prove frontend behavior only. For camera playback, snapshots, queued inference, artifact previews, and complete measurement flows, add a real-backend integration/E2E path where available. Mark skipped tests and unavailable hardware/model prerequisites explicitly; never report them as verified.
 9. **Change sequencing.** Prioritize (P0) readiness correctness and regression tests; (P1) real depth-scale readiness and job-state/error handling; (P1) first-time setup and measurement journey; (P2) result explainability and visual refinement. Avoid unrelated rewrites.
+
+Depth contract aligned 26 October 2026: creation accepts optional source key `test_image`, model, and clipping. Send the uploaded source with points from its undistorted preview; wait for successful preview decoding. Omitted source retains the first-calibration-image fallback. `model_identity` records weights/preparation; active GET returns 409 for `depth_scale_identity_missing`, `depth_scale_model_mismatch`, or `depth_scale_invalid_saved_fit`, with recovery to new scale creation. Model unavailable is 503. Historical list/detail can still show legacy scales. Backend migration head is `007_preview_artifacts`; regenerate unregistered legacy previews and refit legacy scales. Verify deployment version before using the updated contract.
 
 Before closing work, report the files changed, tests actually run, whether they used mocks or a live backend, and any remaining unverified hardware/model behavior.
 

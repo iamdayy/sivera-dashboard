@@ -17,9 +17,9 @@ export async function listPredictionJobs(cameraId: string, page = 1, pageSize = 
   }
 }
 
-export async function getPredictionJob(cameraId: string, jobId: string): Promise<PredictionJob> {
+export async function getPredictionJob(cameraId: string, jobId: string, signal?: AbortSignal): Promise<PredictionJob> {
   try {
-    const response = await apiClient.get<PredictionJob>(cameraPath(cameraId, `/predict/${jobId}`))
+    const response = await apiClient.get<PredictionJob>(cameraPath(cameraId, `/predict/${jobId}`), { signal })
     return response.data
   } catch (error) {
     throw normalizeApiError(error)
@@ -52,7 +52,6 @@ export async function submitPrediction(cameraId: string, payload: SubmitPredicti
     if (payload.max_frame_age_sec !== undefined) formData.append('max_frame_age_sec', payload.max_frame_age_sec.toString())
 
     // return_outputs: omit = all outputs, [] = none, array = specific outputs
-    // Always send the field to match backend contract
     if (payload.return_outputs !== undefined) {
       formData.append('return_outputs', JSON.stringify(payload.return_outputs))
     }

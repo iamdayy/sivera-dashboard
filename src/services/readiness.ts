@@ -43,8 +43,13 @@ export async function checkReadiness(
           missing.push('depth_scale_context_mismatch')
         }
       } catch (error) {
-        if (!isMissingActiveResource(error)) throw error
-        missing.push('prediction_requires_depth_scale')
+        const code = normalizeApiError(error).code
+        if (code === 'depth_scale_identity_missing' || code === 'depth_scale_model_mismatch' || code === 'depth_scale_invalid_saved_fit') {
+          missing.push(code)
+        } else {
+          if (!isMissingActiveResource(error)) throw error
+          missing.push('prediction_requires_depth_scale')
+        }
       }
     }
     assertCurrentConnection(connection)
@@ -92,6 +97,9 @@ const labels: Record<PredictionPrerequisiteCode, string> = {
     'Model ground tidak cocok dengan referensi tanah aktif. Periksa Referensi Tanah.',
   depth_scale_context_mismatch:
     'Skala kedalaman tidak aktif atau tidak cocok dengan kamera/model ground. Muat ulang Skala Kedalaman.',
+  depth_scale_identity_missing: 'Skala lama belum memiliki identitas model. Buat skala kedalaman baru.',
+  depth_scale_model_mismatch: 'Weights atau persiapan model berubah. Buat skala kedalaman baru.',
+  depth_scale_invalid_saved_fit: 'Fit tersimpan tidak memenuhi pemeriksaan. Buat skala kedalaman baru.',
   calibration_intrinsics_missing:
     'Sumber RTSP memerlukan intrinsics asli dan dimensi kalibrasi. Lakukan kalibrasi ulang.',
   calibration_invalid_intrinsics:
