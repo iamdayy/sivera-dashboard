@@ -118,3 +118,10 @@ export function getPrerequisiteRecoveryPath(code: PredictionPrerequisiteCode): s
     return '/dashboard/calibrations'
   return '/dashboard/ground-references'
 }
+
+export function getPrerequisiteRecoveryLabel(code: PredictionPrerequisiteCode): string {
+  const path = getPrerequisiteRecoveryPath(code)
+  if (path === '/dashboard/depth-scales') return 'Buka Skala Kedalaman'
+  if (path === '/dashboard/calibrations') return 'Buka Kalibrasi'
+  return 'Buka Referensi Tanah'
+}

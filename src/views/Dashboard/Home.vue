@@ -12,7 +12,7 @@
           <p class="font-medium text-text">API Key belum diatur</p>
           <p class="mt-1 text-sm text-text-muted">
             Ringkasan memerlukan akses API. Atur API key untuk memuat kamera, kalibrasi, dan job prediksi.
-            <RouterLink to="/dashboard/settings" class="ml-1 text-brand underline">Buka Pengaturan</RouterLink>
+            <RouterLink to="/dashboard/settings" class="inline-flex min-h-11 items-center text-brand underline">Buka Pengaturan</RouterLink>
           </p>
         </div>
       </div>
@@ -28,34 +28,54 @@
       <p class="error-state-title">Gagal memuat ringkasan</p>
       <p class="error-state-description">{{ loadError }}</p>
       <Button variant="outline" @click="fetchAll">Coba Lagi</Button>
+      <RouterLink to="/dashboard/settings" class="inline-flex min-h-11 items-center text-brand underline">Buka Pengaturan</RouterLink>
     </div>
 
     <template v-else>
-      <section aria-label="Metrik utama">
-        <dl class="card grid grid-cols-2 gap-px overflow-hidden bg-sheet-border p-0 lg:grid-cols-4">
+      <MeasurementNextStep v-if="cameras.length > 0"
+        :camera-id="selectedCameraId" :camera-name="selectedCamera?.name ?? ''"
+        :readiness="readiness" :loading="readinessLoading" :error="readinessError"
+        @retry="fetchReadiness(selectedCameraId)">
+        <template #camera>
+          <div class="w-full min-w-0 sm:w-72">
+            <label for="overview-camera" class="label">Pilih kamera</label>
+            <select id="overview-camera" class="input min-h-11 w-full"
+              :value="selectedCameraId" @change="onCameraChange(($event.target as HTMLSelectElement).value)">
+              <option value="" disabled>Pilih kamera</option>
+              <option v-for="camera in cameras" :key="camera.id" :value="camera.id">
+                {{ camera.name }} ({{ camera.resolution_w }}×{{ camera.resolution_h }})
+              </option>
+            </select>
+          </div>
+        </template>
+      </MeasurementNextStep>
+
+      <section v-if="cameras.length > 0" aria-label="Metrik utama">
+        <p v-if="statsLoading" class="text-sm text-text-muted" role="status">Memuat metrik kamera...</p>
+        <dl v-else class="card grid grid-cols-2 gap-px overflow-hidden bg-sheet-border p-0 lg:grid-cols-4">
           <div class="bg-sheet p-4 sm:p-5">
             <dt class="text-sm text-text-muted">Total Kamera</dt>
             <dd class="kpi-value mt-1">{{ stats.totalCameras }}</dd>
-            <p class="mt-2 text-xs text-text-muted">{{ stats.camerasWithCalibration }} dengan kalibrasi aktif</p>
+            <p class="mt-2 text-xs text-text-muted">{{ stats.camerasWithCalibration === null ? 'Kalibrasi belum dapat dimuat' : `${stats.camerasWithCalibration} dengan kalibrasi aktif` }}</p>
           </div>
           <div class="bg-sheet p-4 sm:p-5">
             <dt class="text-sm text-text-muted">Kalibrasi Aktif</dt>
-            <dd class="kpi-value mt-1">{{ stats.activeCalibrations }}</dd>
+            <dd class="kpi-value mt-1">{{ stats.activeCalibrations ?? '-' }}</dd>
             <p class="mt-2 text-xs text-text-muted">
-              {{ stats.totalCalibrations > 0 ? `${stats.totalCalibrations} total versi` : 'Belum ada kalibrasi' }}
+              {{ stats.totalCalibrations === null ? 'Belum dapat dimuat' : stats.totalCalibrations > 0 ? `${stats.totalCalibrations} total versi` : 'Belum ada kalibrasi' }}
             </p>
           </div>
           <div class="bg-sheet p-4 sm:p-5">
             <dt class="text-sm text-text-muted">Referensi Tanah</dt>
-            <dd class="kpi-value mt-1">{{ stats.activeGroundModels }}</dd>
+            <dd class="kpi-value mt-1">{{ stats.activeGroundReferences ?? '-' }}</dd>
             <p class="mt-2 text-xs text-text-muted">
-              {{ stats.totalGroundModels > 0 ? `${stats.totalGroundModels} total model` : 'Belum ada referensi tanah' }}
+              {{ stats.totalGroundReferences === null ? 'Belum dapat dimuat' : stats.totalGroundReferences > 0 ? `${stats.totalGroundReferences} total referensi` : 'Belum ada referensi tanah' }}
             </p>
           </div>
           <div class="bg-sheet p-4 sm:p-5">
             <dt class="text-sm text-text-muted">Analisis Selesai</dt>
-            <dd class="kpi-value mt-1">{{ stats.completedJobs }}</dd>
-            <p class="mt-2 text-xs text-text-muted">Dari {{ stats.totalJobs }} total job</p>
+            <dd class="kpi-value mt-1">{{ stats.completedJobs ?? '-' }}</dd>
+            <p class="mt-2 text-xs text-text-muted">{{ stats.totalJobs === null ? 'Total job belum dapat dimuat' : `Dari ${stats.totalJobs} total job` }}</p>
           </div>
         </dl>
         <p v-if="statsIncomplete" class="mt-2 text-sm text-warning" role="status">
@@ -63,30 +83,8 @@
         </p>
       </section>
 
-      <div v-if="cameras.length > 0" class="grid gap-4 lg:grid-cols-3">
-        <section class="card lg:col-span-2">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div class="min-w-0">
-              <h2 class="text-lg font-semibold text-text">Kamera terpilih</h2>
-              <p class="mt-1 break-words text-sm text-text-muted">
-                {{ selectedCamera?.name || 'Pilih kamera untuk melihat detail' }}
-              </p>
-            </div>
-            <div class="w-full sm:w-auto sm:shrink-0">
-              <label for="overview-camera" class="label">Pilih kamera</label>
-              <select
-                id="overview-camera"
-                class="input w-full sm:w-auto sm:min-w-[13rem]"
-                :value="selectedCameraId"
-                @change="onCameraChange(($event.target as HTMLSelectElement).value)"
-              >
-                <option value="" disabled>Pilih kamera</option>
-                <option v-for="camera in cameras" :key="camera.id" :value="camera.id">
-                  {{ camera.name }} ({{ camera.resolution_w }}×{{ camera.resolution_h }})
-                </option>
-              </select>
-            </div>
-          </div>
+      <details v-if="cameras.length > 0" class="card">
+          <summary class="min-h-11 cursor-pointer content-center font-semibold text-text">Detail kamera dan prasyarat</summary>
 
           <div v-if="selectedCamera" class="mt-5 space-y-4">
             <dl class="grid gap-3 sm:grid-cols-3">
@@ -99,10 +97,15 @@
                 <dd class="font-mono text-text">{{ selectedCamera.fps }}</dd>
               </div>
               <div class="rounded-md bg-frame p-3">
-                <dt class="text-text-muted">Stream</dt>
-                <dd class="font-mono text-text">{{ selectedCamera.stream_enabled ? 'Aktif' : 'Nonaktif' }}</dd>
+                <dt class="text-text-muted">Konfigurasi stream</dt>
+                <dd class="text-text">{{ selectedCamera.stream_enabled ? 'Diaktifkan' : 'Dinonaktifkan' }}</dd>
               </div>
             </dl>
+            <p v-if="cameraDetailError" class="text-sm text-negative" role="alert">{{ cameraDetailError }} Metadata di atas masih mengikuti daftar kamera.</p>
+            <div class="text-sm text-text-muted">
+              <p>Status online dan usia frame diperiksa di Manajemen Kamera.</p>
+              <RouterLink :to="{ path: '/dashboard/cameras', query: { camera: selectedCamera.id } }" class="inline-flex min-h-11 items-center text-brand underline">Periksa Kamera dan Stream</RouterLink>
+            </div>
 
             <div class="border-t border-sheet-border pt-4">
               <h3 class="font-semibold text-text">Kesiapan konfigurasi</h3>
@@ -112,11 +115,7 @@
                 Memeriksa prasyarat...
               </div>
 
-              <div v-else-if="readinessError" class="mt-3 rounded-md border border-negative-border bg-negative-bg/40 p-3">
-                <p class="text-sm text-negative">Gagal memeriksa prasyarat: {{ readinessError }}</p>
-                <Button variant="outline" class="mt-2" @click="fetchReadiness(selectedCamera.id)">Coba Lagi</Button>
-                <RouterLink to="/dashboard/settings" class="ml-3 inline-flex min-h-11 items-center text-sm text-brand underline">Buka Pengaturan</RouterLink>
-              </div>
+              <p v-else-if="readinessError" class="mt-3 text-sm text-text-muted">Pemeriksaan belum berhasil. Gunakan pemulihan pada Langkah berikutnya.</p>
 
               <ul v-else-if="readiness" class="mt-3 space-y-2">
                 <li class="flex flex-col gap-2 rounded-md border border-sheet-border p-3 sm:flex-row sm:items-center">
@@ -168,7 +167,6 @@
                 </li>
               </ul>
 
-              <PredictionReadinessIssues v-if="readiness" :readiness="readiness" class="mt-3" />
             </div>
           </div>
 
@@ -177,33 +175,7 @@
             <p class="empty-state-title">Belum ada kamera terpilih</p>
             <p class="empty-state-description">Pilih kamera dari dropdown untuk melihat status kesiapan konfigurasi.</p>
           </div>
-        </section>
-
-        <aside class="card">
-          <h2 class="text-lg font-semibold text-text">Langkah berikutnya</h2>
-          <p class="mt-1 text-sm text-text-muted">
-            Halaman tujuan akan menampilkan prasyarat atau konfigurasi yang masih kurang.
-          </p>
-          <div class="mt-4 space-y-2">
-            <RouterLink to="/dashboard/cameras" class="btn btn-outline min-h-11 w-full justify-start">
-              <Video class="h-4 w-4" aria-hidden="true" />
-              Kelola Kamera
-            </RouterLink>
-            <RouterLink to="/dashboard/calibrations" class="btn btn-outline min-h-11 w-full justify-start">
-              <GitCompare class="h-4 w-4" aria-hidden="true" />
-              Kelola Kalibrasi
-            </RouterLink>
-            <RouterLink to="/dashboard/ground-references" class="btn btn-outline min-h-11 w-full justify-start">
-              <MapPin class="h-4 w-4" aria-hidden="true" />
-              Kelola Referensi Tanah
-            </RouterLink>
-            <RouterLink to="/dashboard/predictions" class="btn btn-primary min-h-11 w-full justify-start">
-              <Brain class="h-4 w-4" aria-hidden="true" />
-              Jalankan Prediksi
-            </RouterLink>
-          </div>
-        </aside>
-      </div>
+      </details>
 
       <section v-if="selectedCameraId" class="card">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -303,9 +275,9 @@
         </RouterLink>
       </div>
 
-      <section v-if="cameras.length > 0 && (!selectedCameraId || chartData.length === 0)" class="card">
+      <section v-if="cameras.length > 0 && (!selectedCameraId || chartData.length === 0)" class="card" aria-labelledby="overview-recent-jobs">
         <div class="flex flex-col gap-1">
-          <h2 class="text-lg font-semibold text-text">Job prediksi terbaru</h2>
+          <h2 id="overview-recent-jobs" class="text-lg font-semibold text-text">Job prediksi terbaru</h2>
           <p v-if="cameras.length > 5" class="text-sm text-text-muted">
             Dimuat dari 5 kamera pertama. Buka halaman Analisis Sampah untuk riwayat per kamera.
           </p>
@@ -316,6 +288,11 @@
           Memuat job terbaru...
         </div>
 
+        <div v-else-if="recentJobs.length === 0 && recentJobsIncomplete" class="mt-4 space-y-3" role="alert">
+          <p class="font-medium text-text">Riwayat belum dapat dimuat</p>
+          <p class="text-sm text-negative">{{ recentJobsError }}</p>
+          <Button variant="outline" class="min-h-11" @click="fetchRecentJobs">Muat Ulang Riwayat</Button>
+        </div>
         <div v-else-if="recentJobs.length === 0" class="empty-state py-8">
           <Brain class="empty-state-icon" aria-hidden="true" />
           <p class="empty-state-title">Belum ada job prediksi</p>
@@ -344,9 +321,10 @@
           </div>
         </div>
 
-        <p v-if="recentJobsIncomplete" class="mt-2 text-xs text-warning" role="status">
-          Sebagian job terbaru tidak dapat dimuat.
-        </p>
+        <div v-if="recentJobsIncomplete && recentJobs.length > 0" class="mt-2 space-y-2" role="status">
+          <p class="text-sm text-warning">Sebagian job terbaru tidak dapat dimuat. {{ recentJobsError }}</p>
+          <Button variant="outline" class="min-h-11" @click="fetchRecentJobs">Muat Ulang Riwayat</Button>
+        </div>
       </section>
     </template>
   </div>
@@ -354,7 +332,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useApiStore } from '@/stores/api'
 import { useToast } from '@/composables/useToast'
 import { useConnectionScope } from '@/composables/useConnectionScope'
@@ -365,10 +343,10 @@ import { listPredictionJobs, checkPredictionPrerequisites, getPredictionVolumes 
 import type { Camera, PredictionJob, VolumeEstimate } from '@/types'
 import type { PredictionPrerequisites } from '@/services/predictions'
 import VolumeChart from '@/components/dashboard/VolumeChart.vue'
-import PredictionReadinessIssues from '@/components/PredictionReadinessIssues.vue'
+import MeasurementNextStep from '@/components/dashboard/MeasurementNextStep.vue'
 import Button from '@/components/ui/Button.vue'
 import { RouterLink } from 'vue-router'
-import { AlertCircle, Brain, CheckCircle, GitCompare, HelpCircle, MapPin, Video, XCircle } from '@lucide/vue'
+import { AlertCircle, Brain, CheckCircle, Video, XCircle } from '@lucide/vue'
 
 interface ChartPoint {
   jobId: string
@@ -381,6 +359,7 @@ interface ChartPoint {
 }
 
 const route = useRoute()
+const router = useRouter()
 const apiStore = useApiStore()
 const toast = useToast()
 const isActive = useConnectionScope()
@@ -390,19 +369,22 @@ const loadError = ref<string | null>(null)
 const cameras = ref<Camera[]>([])
 const selectedCameraId = ref('')
 const selectedCamera = ref<Camera | null>(null)
+const cameraDetailError = ref('')
+let cameraDetailRequestId = 0
 
 const emptyStats = () => ({
   totalCameras: 0,
-  camerasWithCalibration: 0,
-  activeCalibrations: 0,
-  totalCalibrations: 0,
-  activeGroundModels: 0,
-  totalGroundModels: 0,
-  completedJobs: 0,
-  totalJobs: 0,
+  camerasWithCalibration: null as number | null,
+  activeCalibrations: null as number | null,
+  totalCalibrations: null as number | null,
+  activeGroundReferences: null as number | null,
+  totalGroundReferences: null as number | null,
+  completedJobs: null as number | null,
+  totalJobs: null as number | null,
 })
 
 const stats = ref(emptyStats())
+const statsLoading = ref(false)
 const statsIncomplete = ref(false)
 const statsFailureCount = ref(0)
 
@@ -425,6 +407,7 @@ let chartRequestId = 0
 const recentJobs = ref<PredictionJob[]>([])
 const recentJobsLoading = ref(false)
 const recentJobsIncomplete = ref(false)
+const recentJobsError = ref('')
 
 const hasApiKey = computed(() => apiStore.hasApiKey)
 
@@ -520,9 +503,16 @@ async function fetchCameras() {
 }
 
 async function fetchCameraDetails(cameraId: string) {
-  const camera = await getCamera(cameraId)
-  if (!isActive() || cameraId !== selectedCameraId.value) return
-  selectedCamera.value = camera
+  const requestId = ++cameraDetailRequestId
+  cameraDetailError.value = ''
+  try {
+    const camera = await getCamera(cameraId)
+    if (!isActive() || requestId !== cameraDetailRequestId || cameraId !== selectedCameraId.value) return
+    selectedCamera.value = camera
+  } catch (error) {
+    if (!isActive() || requestId !== cameraDetailRequestId || cameraId !== selectedCameraId.value) return
+    cameraDetailError.value = errorMessage(error)
+  }
 }
 
 async function fetchReadiness(cameraId: string) {
@@ -545,7 +535,9 @@ async function fetchReadiness(cameraId: string) {
 }
 
 async function fetchStats() {
+  statsLoading.value = true
   const next = emptyStats()
+  next.totalCameras = cameras.value.length
   let failures = 0
 
   for (const camera of cameras.value) {
@@ -562,29 +554,29 @@ async function fetchStats() {
     let cameraFailed = false
 
     if (calibrations.status === 'fulfilled') {
-      next.totalCalibrations += calibrations.value.total
+      next.totalCalibrations = (next.totalCalibrations ?? 0) + calibrations.value.total
       const active = calibrations.value.items.filter(item => item.is_active)
-      next.activeCalibrations += active.length
-      if (active.length > 0) next.camerasWithCalibration += 1
+      next.activeCalibrations = (next.activeCalibrations ?? 0) + active.length
+      next.camerasWithCalibration = (next.camerasWithCalibration ?? 0) + Number(active.length > 0)
     } else {
       cameraFailed = true
     }
 
     if (groundReferences.status === 'fulfilled') {
-      next.totalGroundModels += groundReferences.value.total
-      next.activeGroundModels += groundReferences.value.items.filter(item => item.is_active).length
+      next.totalGroundReferences = (next.totalGroundReferences ?? 0) + groundReferences.value.total
+      next.activeGroundReferences = (next.activeGroundReferences ?? 0) + groundReferences.value.items.filter(item => item.is_active).length
     } else {
       cameraFailed = true
     }
 
     if (allJobs.status === 'fulfilled') {
-      next.totalJobs += allJobs.value.total
+      next.totalJobs = (next.totalJobs ?? 0) + allJobs.value.total
     } else {
       cameraFailed = true
     }
 
     if (doneJobs.status === 'fulfilled') {
-      next.completedJobs += doneJobs.value.total
+      next.completedJobs = (next.completedJobs ?? 0) + doneJobs.value.total
     } else {
       cameraFailed = true
     }
@@ -596,6 +588,7 @@ async function fetchStats() {
   stats.value = next
   statsFailureCount.value = failures
   statsIncomplete.value = failures > 0
+  statsLoading.value = false
 }
 
 async function fetchChartData() {
@@ -669,8 +662,10 @@ async function fetchChartData() {
 }
 
 async function fetchRecentJobs() {
+  if (recentJobsLoading.value) return
   recentJobsLoading.value = true
   recentJobsIncomplete.value = false
+  recentJobsError.value = ''
   const allJobs: PredictionJob[] = []
   let failures = 0
 
@@ -679,8 +674,9 @@ async function fetchRecentJobs() {
     try {
       const response = await listPredictionJobs(camera.id, 1, 3)
       allJobs.push(...response.items.map(job => ({ ...job, camera_id: camera.id })))
-    } catch {
+    } catch (error) {
       failures += 1
+      if (isActive()) recentJobsError.value = errorMessage(error)
     }
   }
 
@@ -706,16 +702,16 @@ async function fetchAll() {
     await fetchCameras()
     if (!isActive()) return
 
-    await Promise.all([fetchStats(), fetchRecentJobs()])
-    if (!isActive()) return
-
     if (selectedCameraId.value) {
       const cameraId = selectedCameraId.value
       selectedCamera.value = cameras.value.find(camera => camera.id === cameraId) ?? null
+      loading.value = false
       await Promise.all([
         fetchCameraDetails(cameraId),
         fetchReadiness(cameraId),
         fetchChartData(),
+        fetchStats(),
+        fetchRecentJobs(),
       ])
     }
   } catch (error: unknown) {
@@ -736,6 +732,7 @@ async function onCameraChange(cameraId: string) {
   if (!cameraId || cameraId === selectedCameraId.value) return
 
   selectedCameraId.value = cameraId
+  void router.replace({ query: { ...route.query, camera: cameraId } })
   selectedCamera.value = cameras.value.find(camera => camera.id === cameraId) ?? null
   readiness.value = null
   readinessError.value = null
@@ -752,6 +749,8 @@ async function onCameraChange(cameraId: string) {
 
 function resetForMissingKey() {
   readinessRequestId += 1
+  cameraDetailRequestId += 1
+  cameraDetailError.value = ''
   cameras.value = []
   selectedCameraId.value = ''
   selectedCamera.value = null

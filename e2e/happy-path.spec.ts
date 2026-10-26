@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { camera, installApiFixture } from './fixtures/api'
+import { setupOverview } from './fixtures/overview'
 
 test.beforeEach(async ({ page }) => {
   await installApiFixture(page)
@@ -28,17 +29,18 @@ test('Landing page exposes the configuration workflow without live claims', asyn
 })
 
 test('Dashboard navigation performs real actions', async ({ page }) => {
-  await installApiFixture(page, true, [camera])
+  await setupOverview(page, [camera])
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ringkasan')
   for (const name of ['Total Kamera', 'Kalibrasi Aktif', 'Referensi Tanah', 'Analisis Selesai']) {
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible()
   }
-  await page.getByRole('link', { name: 'Kelola Kamera', exact: true }).click()
-  await expect(page).toHaveURL(/\/dashboard\/cameras$/)
+  await page.getByText('Detail kamera dan prasyarat', { exact: true }).click()
+  await page.getByRole('link', { name: 'Periksa Kamera dan Stream', exact: true }).click()
+  await expect(page).toHaveURL(`/dashboard/cameras?camera=${camera.id}`)
   await page.goto('/dashboard')
-  await page.getByRole('link', { name: 'Jalankan Prediksi', exact: true }).click()
-  await expect(page).toHaveURL(/\/dashboard\/predictions$/)
+  await page.getByRole('link', { name: 'Buka Analisis Sampah', exact: true }).click()
+  await expect(page).toHaveURL(`/dashboard/predictions?camera=${camera.id}`)
 })
 
 test('Settings validates access against the UI fixture', async ({ page }) => {

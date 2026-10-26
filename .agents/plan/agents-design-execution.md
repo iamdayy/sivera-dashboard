@@ -63,8 +63,8 @@ Alur: Pengaturan akses → Kamera → Kalibrasi → Referensi Tanah → Skala Ke
 
 - [x] Tindakan berikutnya serta alasan primary action terblokir terlihat dekat kontrol pada preflight Analisis.
 - [x] Link setup membawa konteks kamera; readiness diperiksa ulang setelah kembali ke Analisis.
-- [ ] Pisahkan health, akses, stream runtime, frame freshness, readiness, dan status job.
-- [ ] Lengkapi loading, empty, blocked, error, processing, success, serta partial-result.
+- [x] Pisahkan health/akses dari kesiapan; Ringkasan menyatakan konfigurasi stream dan menuju Kamera untuk runtime/frame freshness. Bukti hardware live masih tertunda.
+- [x] Lengkapi state Ringkasan serta processing/success/partial-result Analisis; gate frontend mock tercatat per milestone.
 - [x] Gunakan GET riwayat backend dan paginasi; tidak mensimulasikan persistence/auth/permissions.
 
 ### 6. P2: hasil dan visual
@@ -257,3 +257,19 @@ P0 telah di-commit sebagai `be511a5`. Catatan di atas adalah bukti tahap P0, buk
 Implementasi tahap 3/4 selesai untuk frontend. Bukti, file, batas live, kritik visual, dan Delivery Gate ada di [2026-10-26-p1-delivery.md](2026-10-26-p1-delivery.md). Alignment backend sebelumnya tetap dicatat di [2026-10-26-depth-contract-alignment.md](2026-10-26-depth-contract-alignment.md).
 
 Tahap berikutnya adalah Ringkasan untuk operator baru: satu tindakan setup dari readiness yang sudah ada, konteks kamera pada navigasi, serta status konfigurasi stream yang tidak menyatakan runtime aktif. Auth tetap mengikuti kontrak API key existing.
+
+### 26 Oktober 2026: mulai perjalanan operator di Ringkasan
+
+- Milestone depth/job tersimpan: `7ccf8b8`.
+- Design Read: Ringkasan operasional untuk operator baru, framed sheet SIVERA, ENERGY 1 / RHYTHM 1 / MOTION 1. Fokus layar adalah kamera dan tindakan setup berikutnya, berasal dari resolver readiness existing.
+- Ganti daftar tautan tetap dengan satu tujuan dari masalah readiness pertama; ready menuju Analisis dengan kamera terpilih. Loading/error tidak menawarkan prediksi siap.
+- Pertahankan kamera pada navigasi/refresh; label stream menunjukkan konfigurasi, dengan tautan pemeriksaan runtime/frame di Kamera.
+- Bedakan akses gagal dan daftar kosong, termasuk riwayat. Perbaiki count kamera Ringkasan yang tertimpa nol saat agregasi.
+- Gunakan operasi GET existing, tanpa perubahan payload/endpoints. Uji alur progression setup, state error/loading/empty/ready, query kamera, dan respons stale dengan API mock. Backend live belum tersedia.
+
+### 26 Oktober 2026: gate perjalanan operator selesai
+
+- Build/type-check lulus; 308 unit test dan 82 E2E mock Chromium/Firefox lulus. Tidak ada perubahan source aplikasi setelah build tersebut.
+- Kamera dan langkah readiness muncul sebelum metrik; detail panjang menjadi disclosure. State loading metrik tidak menahan readiness. Nilai metrik yang gagal dimuat tetap `null`, agregat parsial menyatakan cakupan.
+- Inspector produksi: 12 state pada 390/768/1280, 0 FAIL/10 WARN. Semua gambar dibuka; alasan warning, kritik, click-through, dan Delivery Gate tersimpan di [2026-10-26-operator-delivery.md](2026-10-26-operator-delivery.md).
+- Berikutnya: jelaskan metode/unit/konteks hasil dan pertahankan nilai hilang sebagai tidak tersedia. Verifikasi kontrak sumber sebelum mengubah representasi data hasil.

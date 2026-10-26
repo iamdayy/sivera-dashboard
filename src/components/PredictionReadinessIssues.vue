@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getMissingPrerequisiteLabels, getPrerequisiteRecoveryPath } from '@/services/readiness'
+import { getMissingPrerequisiteLabels, getPrerequisiteRecoveryLabel, getPrerequisiteRecoveryPath } from '@/services/readiness'
 import type { PredictionPrerequisites } from '@/types'
 
 const props = defineProps<{ readiness: PredictionPrerequisites }>()
@@ -10,13 +10,9 @@ const issues = computed(() =>
     code,
     message: getMissingPrerequisiteLabels([code])[0],
     path: getPrerequisiteRecoveryPath(code),
+    action: getPrerequisiteRecoveryLabel(code),
   })),
 )
-const destinations: Record<string, string> = {
-  '/dashboard/calibrations': 'Kalibrasi',
-  '/dashboard/ground-references': 'Referensi Tanah',
-  '/dashboard/depth-scales': 'Skala Kedalaman',
-}
 </script>
 
 <template>
@@ -34,7 +30,7 @@ const destinations: Record<string, string> = {
             :to="{ path: issue.path, query: { camera: readiness.camera_id } }"
             class="inline-flex min-h-11 items-center text-brand underline"
           >
-            Buka {{ destinations[issue.path] }}
+            {{ issue.action }}
           </RouterLink>
         </li>
       </ul>

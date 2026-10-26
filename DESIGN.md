@@ -167,6 +167,8 @@ Rencana dan hasil verifikasi: `.agents/plan/2026-10-26-depth-contract-alignment.
 
 ### UX objective
 
+The overview starts with the selected camera and its next setup action, derived from the shared readiness resolver. Ready configuration opens Analysis with that camera; loading and access failures have their own states. Camera selection survives refresh through the query string. Camera/prerequisite details are expandable. Metrics and history load independently of readiness; unavailable totals remain unavailable and partial totals state their coverage. Stream configuration is labeled separately from runtime status and frame freshness, which are inspected in Cameras. Verification: `.agents/plan/2026-10-26-operator-delivery.md`.
+
 A new operator should be able to answer at any point:
 - What step am I on?
 - Is the camera/source actually available?
