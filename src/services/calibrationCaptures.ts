@@ -1,5 +1,5 @@
 import { apiClient, cameraPath, normalizeApiError } from './api'
-import type { CaptureCreate, CaptureResponse, CaptureImageList, CaptureImageResponse } from '@/types'
+import type { CaptureCreate, CaptureResponse, CaptureImageList } from '@/types'
 
 export async function startCapture(cameraId: string, payload: CaptureCreate, signal?: AbortSignal): Promise<CaptureResponse> {
   try {
@@ -56,4 +56,12 @@ export function isCaptureTerminal(status: string): boolean {
 
 export function isComputeTerminal(status: string): boolean {
   return ['done', 'failed'].includes(status)
+}
+
+export function captureComputeDisabledReason(session: CaptureResponse): string | null {
+  if (!isCaptureTerminal(session.status)) return 'Tunggu capture selesai atau hentikan capture sebelum memulai compute.'
+  if (session.compute_status === 'queued') return 'Compute sedang mengantre. Status akan diperbarui otomatis.'
+  if (session.compute_status === 'running') return 'Compute sedang diproses. Status akan diperbarui otomatis.'
+  if (session.compute_status === 'done') return 'Compute sudah selesai untuk sesi ini.'
+  return null
 }

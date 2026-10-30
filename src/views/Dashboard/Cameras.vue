@@ -80,6 +80,18 @@
               </td>
               <td>
                 <div class="flex flex-wrap gap-2">
+                  <RouterLink :to="`/dashboard/cameras/${camera.id}/calibration`">
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      :aria-label="`Kalibrasi ${camera.name}`"
+                      :class="cameraStatuses[camera.id] === 'active' ? '' : 'bg-brand hover:bg-brand/90'"
+                    >
+                      <Settings v-if="cameraStatuses[camera.id] !== 'active'" class="w-3 h-3 mr-1" />
+                      <Brain v-else class="w-3 h-3 mr-1" />
+                      {{ cameraStatuses[camera.id] === 'active' ? 'Analisis' : 'Kalibrasi' }}
+                    </Button>
+                  </RouterLink>
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -385,6 +397,7 @@ import { useConnectionScope } from '@/composables/useConnectionScope'
 import { cameraPayload, createCameraForm } from '@/lib/camera-form'
 import { useApiStore } from '@/stores/api'
 import type { Camera, SnapshotResponse, StreamResponse } from '@/types'
+import { useRouter } from 'vue-router'
 import {
   createCamera as apiCreateCamera,
   deleteCamera as apiDeleteCamera,
@@ -400,11 +413,13 @@ import WhepPlayer from '@/components/media/WhepPlayer.vue'
 // UI Components
 import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
 
-import { Video, AlertCircle, CheckCircle, XCircle } from '@lucide/vue'
+import { Video, AlertCircle, CheckCircle, XCircle, Brain, Settings } from '@lucide/vue'
+import { RouterLink } from 'vue-router'
 
+const router = useRouter()
 const apiStore = useApiStore()
 const toast = useToast()
-const isActive = useConnectionScope()
+const { isActive, getApiKey } = useConnectionScope()
 
 const cameras = ref<Camera[]>([])
 const loading = ref(false)
@@ -500,6 +515,12 @@ function getCalibrationStatusText(cameraId: string): string {
     case 'error': return 'Gagal diperiksa'
     default: return 'Belum Dikalibrasi'
   }
+}
+
+function navigateToCalibration(camera: Camera) {
+  // Check if camera has active calibration, ground model, and depth scale
+  // For now, just navigate to calibration page
+  router.push(`/dashboard/cameras/${camera.id}/calibration`)
 }
 
 function openCreateDialog() {

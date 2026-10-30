@@ -33,6 +33,7 @@ export interface CreateGroundReferencePayload {
   world_points: number[][]
   world_units: 'meter' | 'metre'
   description?: string
+  source_id?: string
 }
 
 export async function createGroundReference(cameraId: string, payload: CreateGroundReferencePayload): Promise<GroundReference> {
@@ -42,6 +43,7 @@ export async function createGroundReference(cameraId: string, payload: CreateGro
     formData.append('world_points', JSON.stringify(payload.world_points))
     formData.append('world_units', payload.world_units)
     if (payload.description) formData.append('description', payload.description)
+    if (payload.source_id) formData.append('source_id', payload.source_id)
 
     const response = await apiClient.post<GroundReference>(cameraPath(cameraId, '/ground-references'), formData)
     return response.data
@@ -121,6 +123,66 @@ export async function getBEVPreview(cameraId: string, groundModelId: string, tes
 
     const response = await apiClient.get<BEVPreview>(cameraPath(cameraId, `/ground-models/${groundModelId}/bev-preview?${params}`))
     return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export interface GroundReferenceSource {
+  id: string
+  camera_id: string
+  snapshot_id: string
+  calibration_id: string
+  storage_key: string
+  source_hash: string
+  image_sha256: string
+  preparation_version: number
+  width: number
+  height: number
+  size_bytes: number
+  captured_at: string
+  created_at: string
+}
+
+export interface GroundReferenceSourceList {
+  items: GroundReferenceSource[]
+  total: number
+}
+
+export async function listGroundReferenceSources(cameraId: string): Promise<GroundReferenceSourceList> {
+  try {
+    const response = await apiClient.get<GroundReferenceSourceList>(cameraPath(cameraId, '/ground-reference-sources'))
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function getGroundReferenceSource(cameraId: string, sourceId: string): Promise<GroundReferenceSource> {
+  try {
+    const response = await apiClient.get<GroundReferenceSource>(cameraPath(cameraId, `/ground-reference-sources/${sourceId}`))
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export interface CreateGroundReferenceSourcePayload {
+  // No payload needed; uses active calibration and latest snapshot
+}
+
+export async function createGroundReferenceSource(cameraId: string): Promise<GroundReferenceSource> {
+  try {
+    const response = await apiClient.post<GroundReferenceSource>(cameraPath(cameraId, '/ground-reference-sources'))
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function getGroundReferenceSourceImageBlob(cameraId: string, sourceId: string, signal?: AbortSignal): Promise<Blob> {
+  try {
+    return (await apiClient.get<Blob>(cameraPath(cameraId, `/ground-reference-sources/${sourceId}/image`), { responseType: 'blob', signal })).data
   } catch (error) {
     throw normalizeApiError(error)
   }

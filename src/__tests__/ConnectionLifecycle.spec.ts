@@ -31,12 +31,12 @@ describe('connection lifecycle', () => {
 
   it('invalidates component continuations on connection changes and disposal', () => {
     const scope = effectScope()
-    const isActive = scope.run(useConnectionScope)!
+    const { isActive } = scope.run(useConnectionScope)!
     expect(isActive()).toBe(true)
     setConnection('http://new-sivera.test', 'new-fixture')
     expect(isActive()).toBe(false)
     const next = effectScope()
-    const isNextActive = next.run(useConnectionScope)!
+    const { isActive: isNextActive } = next.run(useConnectionScope)!
     next.stop()
     expect(isNextActive()).toBe(false)
     scope.stop()

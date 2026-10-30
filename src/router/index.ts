@@ -25,19 +25,10 @@ const routes = [
         component: () => import('@/views/Dashboard/Cameras.vue')
       },
       {
-        path: 'calibrations',
-        name: 'Calibrations',
-        component: () => import('@/views/Dashboard/Calibrations.vue')
-      },
-      {
-        path: 'ground-references',
-        name: 'GroundReferences',
-        component: () => import('@/views/Dashboard/GroundReferences.vue')
-      },
-      {
-        path: 'depth-scales',
-        name: 'DepthScales',
-        component: () => import('@/views/Dashboard/DepthScales.vue')
+        path: 'cameras/:id/calibration',
+        name: 'CameraCalibration',
+        component: () => import('@/views/Dashboard/CalibrationUnified.vue'),
+        meta: { requiresCamera: true }
       },
       {
         path: 'predictions',
@@ -50,6 +41,19 @@ const routes = [
         component: () => import('@/views/Dashboard/Settings.vue')
       }
     ]
+  },
+  // Redirect old routes to cameras page
+  {
+    path: '/dashboard/calibrations',
+    redirect: '/dashboard/cameras'
+  },
+  {
+    path: '/dashboard/ground-references',
+    redirect: '/dashboard/cameras'
+  },
+  {
+    path: '/dashboard/depth-scales',
+    redirect: '/dashboard/cameras'
   }
 ]
 

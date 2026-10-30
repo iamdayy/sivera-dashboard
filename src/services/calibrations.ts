@@ -82,3 +82,29 @@ export async function deleteCalibration(cameraId: string, calibrationId: string)
     throw normalizeApiError(error)
   }
 }
+
+export interface CaptureConfig {
+  chessboard_cols: number
+  chessboard_rows: number
+  square_m: number
+  interval_sec: number
+  target_images: number
+  max_duration_sec: number
+  auto_calibrate: boolean
+}
+
+export async function captureCalibrationFrames(cameraId: string, config: CaptureConfig): Promise<any> {
+  try {
+    return (await apiClient.post(cameraPath(cameraId, '/calibrations/capture'), config)).data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function uploadCalibrationImages(cameraId: string, formData: FormData): Promise<Calibration> {
+  try {
+    return (await apiClient.post<Calibration>(cameraPath(cameraId, '/calibrations'), formData)).data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}

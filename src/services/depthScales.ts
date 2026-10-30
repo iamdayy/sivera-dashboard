@@ -1,6 +1,6 @@
 import { apiClient, cameraPath, getConnectionContext, normalizeApiError } from './api'
 import { fetchArtifactBlob, requireImageBlob, trustedArtifactUrl } from './artifacts'
-import type { Calibration, DepthScale, DepthScaleCreate, DepthScaleListResponse, DepthScaleImageResponse } from '@/types'
+import type { Calibration, DepthScale, DepthScaleCreate, DepthScaleListResponse, DepthScaleImageResponse, DepthScalePreviewCreate, DepthScalePreviewResponse } from '@/types'
 import type { GroundModel } from './groundReferences'
 import { isMissingActiveResource, resolveMeasurementContext } from './measurementContext'
 
@@ -65,6 +65,56 @@ export async function getDepthScale(cameraId: string, groundModelId: string, dep
       cameraPath(cameraId, `/ground-models/${encodeURIComponent(groundModelId)}/depth-scales/${encodeURIComponent(depthScaleId)}`)
     )
     return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function createDepthScalePreview(
+  cameraId: string,
+  groundModelId: string,
+  payload: DepthScalePreviewCreate,
+  signal?: AbortSignal
+): Promise<DepthScalePreviewResponse> {
+  try {
+    const response = await apiClient.post<DepthScalePreviewResponse>(
+      cameraPath(cameraId, `/ground-models/${encodeURIComponent(groundModelId)}/depth-scales/preview`),
+      payload,
+      { timeout: DEPTH_SCALE_CREATE_TIMEOUT_MS, signal }
+    )
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function getDepthPreviewImageBlob(
+  cameraId: string,
+  groundModelId: string,
+  depthImageId: string,
+  signal?: AbortSignal
+): Promise<Blob> {
+  try {
+    const context = getConnectionContext()
+    const url = cameraPath(cameraId, `/ground-models/${encodeURIComponent(groundModelId)}/depth-scales/preview/${encodeURIComponent(depthImageId)}/image`)
+    const response = await apiClient.get<Blob>(url, { responseType: 'blob', signal })
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function deleteDepthPreview(
+  cameraId: string,
+  groundModelId: string,
+  depthImageId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    await apiClient.delete(
+      cameraPath(cameraId, `/ground-models/${encodeURIComponent(groundModelId)}/depth-scales/preview/${encodeURIComponent(depthImageId)}`),
+      { signal }
+    )
   } catch (error) {
     throw normalizeApiError(error)
   }

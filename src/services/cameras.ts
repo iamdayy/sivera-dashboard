@@ -1,5 +1,5 @@
 import { apiClient, cameraPath, normalizeApiError } from './api'
-import type { Camera, CameraDetail, CameraList, CreateCameraPayload, UpdateCameraPayload } from '@/types'
+import type { Camera, CameraDetail, CameraList, CreateCameraPayload, UpdateCameraPayload, StreamResponse } from '@/types'
 
 export async function listCameras(page = 1, pageSize = 20): Promise<CameraList> {
   try {
@@ -42,6 +42,14 @@ export async function updateCamera(cameraId: string, payload: UpdateCameraPayloa
 export async function deleteCamera(cameraId: string): Promise<void> {
   try {
     await apiClient.delete(cameraPath(cameraId))
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function getCameraStreamStatus(cameraId: string): Promise<StreamResponse> {
+  try {
+    return (await apiClient.get<StreamResponse>(cameraPath(cameraId, '/stream'))).data
   } catch (error) {
     throw normalizeApiError(error)
   }

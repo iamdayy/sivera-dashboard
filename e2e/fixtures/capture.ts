@@ -1,0 +1,41 @@
+import type { CaptureResponse } from '../../src/types'
+import { camera } from './api'
+
+export function captureSession(overrides: Partial<CaptureResponse> = {}): CaptureResponse {
+  return {
+    session_id: '77777777-7777-4777-8777-777777777777',
+    camera_id: camera.id,
+    status: 'running',
+    chessboard_cols: 9,
+    chessboard_rows: 6,
+    square_m: 0.025,
+    interval_sec: 2,
+    target_images: 20,
+    max_duration_sec: 300,
+    auto_calibrate: false,
+    selection_version: 1,
+    accepted: 20,
+    rejected: 0,
+    rejection_counts: {},
+    compute_status: 'none',
+    compute_error_code: null,
+    compute_requested_at: null,
+    compute_started_at: null,
+    compute_completed_at: null,
+    result_calibration_id: null,
+    attempted: 20,
+    captured: 20,
+    failed_attempts: 0,
+    resolution_w: 1920,
+    resolution_h: 1080,
+    error_code: null,
+    finish_reason: null,
+    created_at: '2026-10-29T10:00:00Z',
+    deadline_at: '2026-10-29T10:05:00Z',
+    started_at: '2026-10-29T10:00:01Z',
+    completed_at: null,
+    heartbeat_at: '2026-10-29T10:01:00Z',
+    last_capture_at: '2026-10-29T10:01:00Z',
+    ...overrides,
+  }
+}

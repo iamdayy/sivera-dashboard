@@ -19,7 +19,7 @@ test('first camera loads exactly once and empty state handled', async ({ page })
   const state = await setupGroundReferences(page, [])
   await page.goto('/dashboard/ground-references')
   await expect(page.getByRole('heading', { name: 'Referensi Tanah' })).toBeVisible()
-  await expect(page.getByText('Belum ada referensi tanah untuk kamera ini. Klik "Tambah Referensi Baru" untuk memulai.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Belum ada referensi tanah untuk kamera ini. Klik "Tambah Referensi Baru" atau "Ambil Gambar Tanah" untuk memulai.', { exact: true })).toBeVisible()
   expect(state.loads).toEqual([camera.id])
 })
 

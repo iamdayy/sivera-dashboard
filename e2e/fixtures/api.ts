@@ -55,6 +55,7 @@ export const groundRef: GroundReference = {
   description: 'Referensi fixture UI',
   is_active: true,
   created_at: '2026-10-21T09:00:00Z',
+  source_id: null,
 }
 
 export const inactiveGroundRef: GroundReference = {

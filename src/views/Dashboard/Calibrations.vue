@@ -43,7 +43,7 @@
       <select
         id="calibration-camera"
         v-model="selectedCameraId"
-        :disabled="!hasApiKey || cameraLoading || !cameras.length || busy || isCreateDialogOpen || isDeleteDialogOpen"
+        :disabled="!hasApiKey || cameraLoading || !cameras.length || busy || isCreateDialogOpen || isDeleteDialogOpen || isCaptureDialogOpen"
         class="input"
         aria-describedby="calibration-camera-help"
       >
@@ -369,11 +369,16 @@
             </div>
 
             <div class="space-y-4">
+              <p v-if="computeFailureMessage" class="error-state text-sm" role="alert">{{ computeFailureMessage }}</p>
               <div class="flex flex-wrap gap-2">
                 <Button variant="outline" :disabled="captureBusy || isCaptureTerminal(captureSession.status)" @click="stopCaptureSession">{{ captureBusy ? 'Menghentikan...' : 'Hentikan Capture' }}</Button>
-                <Button :disabled="captureBusy || isComputeTerminal(captureSession.compute_status)" @click="computeCaptureSession" variant="primary">{{ captureBusy ? 'Memulai Compute...' : 'Mulai Compute' }}</Button>
+                <Button :disabled="captureBusy || !!computeDisabledReason" :aria-busy="computeSubmitting" aria-describedby="capture-compute-help" @click="computeCaptureSession" variant="primary">{{ computeSubmitting ? 'Mengantrekan Compute...' : captureSession.compute_status === 'failed' ? 'Coba Compute Lagi' : 'Mulai Compute' }}</Button>
                 <Button type="button" variant="outline" :disabled="captureBusy" @click="refreshCapture">{{ captureBusy ? 'Memuat...' : 'Refresh Status' }}</Button>
               </div>
+              <p id="capture-compute-help" class="text-sm text-text-muted" role="status">{{ computeDisabledReason || 'Compute menggunakan gambar dari sesi ini. Backend akan memeriksa kecukupan gambar.' }}</p>
+              <p v-if="captureSession.compute_status === 'done'" class="text-sm text-text-muted" role="status">
+                {{ captureSession.result_calibration_id ? 'Kalibrasi hasil compute belum aktif. Tutup dialog untuk meninjau dan mengaktifkannya melalui daftar kalibrasi.' : 'Compute selesai, tetapi ID hasil belum tersedia. Refresh status untuk memeriksa hasil.' }}
+              </p>
 
               <div v-if="captureImages.length || captureImageLoading" class="space-y-2">
                 <div class="flex items-center justify-between">
@@ -437,6 +442,7 @@ import {
   deleteCalibration as apiDeleteCalibration
 } from '@/services/calibrations'
 import { listCameras } from '@/services/cameras'
+import { apiErrorFromResponse } from '@/services/api'
 import {
   startCapture,
   stopCapture,
@@ -445,7 +451,8 @@ import {
   getCaptureImageBlob,
   getCaptureSession,
   isCaptureTerminal,
-  isComputeTerminal
+  isComputeTerminal,
+  captureComputeDisabledReason
 } from '@/services/calibrationCaptures'
 
 // UI Components
@@ -456,7 +463,7 @@ import CaptureImageThumbnail from '@/components/media/CaptureImageThumbnail.vue'
 
 const apiStore = useApiStore()
 const toast = useToast()
-const isActive = useConnectionScope()
+const { isActive } = useConnectionScope()
 const route = useRoute()
 const router = useRouter()
 
@@ -493,7 +500,12 @@ const captureLimit = 20
 const captureImageLoading = ref(false)
 const captureError = ref('')
 const captureBusy = ref(false)
+const computeSubmitting = ref(false)
 const isCaptureDialogOpen = ref(false)
+const computeDisabledReason = computed(() => captureSession.value ? captureComputeDisabledReason(captureSession.value) : null)
+const computeFailureMessage = computed(() => captureSession.value?.compute_status === 'failed'
+  ? apiErrorFromResponse(409, { detail: { code: captureSession.value.compute_error_code || 'calibration_compute_failed' } }).message
+  : '')
 const captureForm = ref<CaptureCreate>({
   chessboard_cols: 9,
   chessboard_rows: 6,
@@ -503,7 +515,19 @@ const captureForm = ref<CaptureCreate>({
   max_duration_sec: 300,
   auto_calibrate: false,
 })
-let capturePollingStop: (() => void) | null = null
+const capturePolling = useCapturePolling({
+  onUpdate: (session) => {
+    if (!isActive() || session.camera_id !== selectedCameraId.value || session.session_id !== captureSession.value?.session_id) return
+    const previousTotal = captureSession.value.accepted + captureSession.value.rejected
+    updateCaptureSession(session)
+    if (session.accepted + session.rejected !== previousTotal && !captureImageLoading.value) {
+      void loadCaptureImages(false)
+    }
+  },
+  onError: (error) => {
+    if (isActive()) captureError.value = `${error.message} Pemantauan dijeda. Gunakan Refresh Status untuk memeriksa kembali.`
+  },
+})
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message
@@ -556,6 +580,12 @@ async function fetchCalibrations() {
 }
 
 watch(selectedCameraId, (value) => {
+  capturePolling.stop()
+  captureSession.value = null
+  captureImages.value = []
+  captureTotal.value = 0
+  captureError.value = ''
+  isCaptureDialogOpen.value = false
   actionError.value = null
   clearPreview()
   previewVersion.value = null
@@ -679,6 +709,7 @@ async function deleteCalibration() {
 
 function openCaptureDialog() {
   if (captureBusy.value || !selectedCameraId.value) return
+  capturePolling.stop()
   captureSession.value = null
   captureImages.value = []
   captureTotal.value = 0
@@ -690,14 +721,19 @@ function setCaptureDialogOpen(open: boolean) {
   if (captureBusy.value) return
   isCaptureDialogOpen.value = open
   if (!open) {
-    if (capturePollingStop) {
-      capturePollingStop()
-      capturePollingStop = null
-    }
+    capturePolling.stop()
     captureSession.value = null
     captureImages.value = []
     captureTotal.value = 0
     captureError.value = ''
+  }
+}
+
+function updateCaptureSession(session: CaptureResponse) {
+  const previousResult = captureSession.value?.result_calibration_id
+  captureSession.value = session
+  if (session.compute_status === 'done' && session.result_calibration_id && session.result_calibration_id !== previousResult) {
+    void fetchCalibrations()
   }
 }
 
@@ -723,31 +759,12 @@ async function startCaptureSession() {
   try {
     const session = await startCapture(cameraId, payload)
     if (!isActive() || cameraId !== selectedCameraId.value) return
-    captureSession.value = session
+    updateCaptureSession(session)
     captureTotal.value = 0
     await loadCaptureImages(false)
-    if (capturePollingStop) capturePollingStop()
-    const { stop, start } = useCapturePolling({
-      cameraId,
-      sessionId: session.session_id,
-      onUpdate: (data) => {
-        if (!isActive()) return
-        const previousTotal = captureSession.value
-          ? captureSession.value.accepted + captureSession.value.rejected
-          : 0
-        captureSession.value = data
-        const nextTotal = data.accepted + data.rejected
-        if (nextTotal !== previousTotal && !captureImageLoading.value) {
-          void loadCaptureImages(false)
-        }
-      },
-      onError: (err) => {
-        if (!isActive()) return
-        captureError.value = err.message
-      },
-    })
-    capturePollingStop = stop
-    start()
+    if (isActive() && cameraId === selectedCameraId.value && session.session_id === captureSession.value?.session_id) {
+      capturePolling.start(cameraId, session.session_id)
+    }
   } catch (error) {
     if (!isActive()) return
     captureError.value = errorMessage(error)
@@ -776,35 +793,48 @@ async function stopCaptureSession() {
 }
 
 async function computeCaptureSession() {
-  if (!captureSession.value || captureBusy.value) return
+  if (!captureSession.value || captureBusy.value || computeDisabledReason.value) return
+  const sessionId = captureSession.value.session_id
   captureBusy.value = true
+  computeSubmitting.value = true
   captureError.value = ''
   const cameraId = selectedCameraId.value
+  capturePolling.stop()
   try {
-    await computeCapture(cameraId, captureSession.value.session_id)
-    if (!isActive() || cameraId !== selectedCameraId.value) return
-    toast.success('Compute dimulai')
-    await loadCaptureSession()
+    const session = await computeCapture(cameraId, sessionId)
+    if (!isActive() || cameraId !== selectedCameraId.value || sessionId !== captureSession.value?.session_id) return
+    updateCaptureSession(session)
+    capturePolling.start(cameraId, sessionId)
   } catch (error) {
     if (!isActive()) return
     captureError.value = errorMessage(error)
   } finally {
     captureBusy.value = false
+    computeSubmitting.value = false
   }
 }
 
 async function refreshCapture() {
-  await loadCaptureSession()
-  await loadCaptureImages(false)
+  if (!captureSession.value || captureBusy.value) return
+  captureBusy.value = true
+  captureError.value = ''
+  try {
+    capturePolling.start(selectedCameraId.value, captureSession.value.session_id)
+    await loadCaptureImages(false)
+  } finally {
+    captureBusy.value = false
+  }
 }
 
 async function loadCaptureSession() {
   if (!captureSession.value) return
   const cameraId = selectedCameraId.value
+  const sessionId = captureSession.value.session_id
   try {
-    const session = await getCaptureSession(cameraId, captureSession.value.session_id)
-    if (!isActive() || cameraId !== selectedCameraId.value) return
-    captureSession.value = session
+    const session = await getCaptureSession(cameraId, sessionId)
+    if (!isActive() || cameraId !== selectedCameraId.value || sessionId !== captureSession.value?.session_id) return
+    updateCaptureSession(session)
+    capturePolling.start(cameraId, sessionId)
   } catch (error) {
     if (!isActive()) return
     captureError.value = errorMessage(error)
@@ -865,9 +895,5 @@ function formatDate(dateString: string): string {
 onMounted(fetchCameras)
 onUnmounted(() => {
   loadVersion++
-  if (capturePollingStop) {
-    capturePollingStop()
-    capturePollingStop = null
-  }
 })
 </script>

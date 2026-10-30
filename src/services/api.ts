@@ -89,6 +89,10 @@ export function cameraPath(cameraId?: string, suffix = ''): string {
   return `/api/v1/cameras${cameraId ? `/${encodeURIComponent(cameraId)}` : ''}${suffix}`
 }
 
+export function getApiKey(): string {
+  return connectionKey
+}
+
 export const apiClient = axios.create({
   baseURL: connectionState.value.origin,
   adapter: 'fetch',
@@ -191,6 +195,13 @@ const codeMessages: Record<string, string> = {
   calibration_too_many_images: 'Jumlah gambar kalibrasi melebihi batas backend.',
   calibration_upload_too_large: 'Total ukuran gambar kalibrasi melebihi batas backend.',
   calibration_intrinsics_missing: 'Kalibrasi tidak memiliki intrinsics asli atau dimensi yang diperlukan. Lakukan kalibrasi ulang.',
+  calibration_queue_timeout: 'Compute belum diambil worker hingga batas waktu antrean. Minta operator memeriksa worker dan antrean calibration, lalu coba compute lagi pada sesi ini.',
+  calibration_compute_timeout: 'Perhitungan kalibrasi melewati batas waktu. Periksa worker kalibrasi bersama operator, lalu coba compute lagi pada sesi ini.',
+  calibration_compute_failed: 'Perhitungan kalibrasi gagal. Periksa worker dan log backend bersama operator sebelum mencoba compute lagi.',
+  calibration_insufficient_images: 'Gambar yang memenuhi syarat belum cukup untuk compute. Buat sesi capture baru dengan lebih banyak gambar chessboard yang diterima.',
+  calibration_source_changed: 'Sumber kamera berubah sejak capture. Buat sesi capture baru untuk sumber kamera saat ini.',
+  capture_not_finished: 'Capture masih berjalan. Tunggu selesai atau hentikan capture sebelum memulai compute.',
+  stream_service_not_configured: 'MediaMTX belum diaktifkan atau konfigurasinya belum lengkap pada layanan pemroses. Minta operator memeriksa konfigurasi API dan worker capture.',
 }
 
 export function apiErrorFromResponse(status: number, data: unknown): ApiError {

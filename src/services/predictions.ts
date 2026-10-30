@@ -99,3 +99,7 @@ export async function getPredictionVolumes(cameraId: string, jobId: string): Pro
     throw normalizeApiError(error)
   }
 }
+
+export async function runPrediction(cameraId: string, payload: SubmitPredictionPayload): Promise<SubmitPredictionResult> {
+  return submitPrediction(cameraId, payload)
+}

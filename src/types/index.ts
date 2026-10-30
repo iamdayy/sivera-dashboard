@@ -86,6 +86,24 @@ export interface GroundReference {
   description: string | null
   is_active: boolean
   created_at: string
+  source_id: string | null
+}
+
+export interface GroundModel {
+  id: string
+  camera_id: string
+  calibration_id: string
+  ground_ref_id: string
+  R_matrix: number[][]
+  t_vector: number[]
+  H_i2w: number[][]
+  H_w2i: number[][]
+  cam_height: number | null
+  pitch_down_deg: number | null
+  reproj_err_px: number | null
+  bev_ppm: number
+  bev_margin_m: number
+  created_at: string
 }
 
 export interface GroundReferenceList {
@@ -210,7 +228,18 @@ export interface PredictionPrerequisites {
   active_depth_model: string | null
 }
 
-export type StreamStatus = 'disabled' | 'idle' | 'online' | 'offline' | 'unknown'
+export interface SubmitPredictionPayload {
+  source_type: 'upload' | 'rtsp_frame' | 'latest_rtsp'
+  seg_conf?: number
+  seg_model?: string
+  seg_classes?: string[]
+  volume_cell_m?: number
+  volume_min_pts_per_cell?: number
+  max_frame_age_sec?: number
+  return_outputs?: string[]
+  file?: File
+  timestamp?: string
+}
 
 export interface StreamResponse {
   camera_id: string
@@ -238,12 +267,12 @@ export interface CaptureCreate {
 export interface CaptureResponse extends CaptureCreate {
   session_id: string
   camera_id: string
-  status: string
+  status: CaptureStatus
   selection_version: number
   accepted: number
   rejected: number
   rejection_counts: Record<string, number>
-  compute_status: string
+  compute_status: CaptureComputeStatus
   compute_error_code: string | null
   compute_requested_at: string | null
   compute_started_at: string | null
@@ -333,6 +362,9 @@ export interface DepthMeasurement {
 }
 
 export interface DepthScaleCreate {
+  // Two-step flow: depth_image_id from /preview endpoint
+  depth_image_id?: string
+  // Legacy flow: test_image source key
   test_image?: string
   depth_model?: string
   clip_min_m?: number
@@ -348,6 +380,25 @@ export interface DepthScaleImageResponse {
   height: number
   coordinate_system: 'undistorted_pixels'
   distance_type: 'camera_axis_z_m'
+}
+
+export interface DepthScalePreviewCreate {
+  test_image?: string
+  depth_model?: string
+}
+
+export interface DepthScalePreviewResponse {
+  depth_image_id: string
+  depth_visualization_url: string
+  width: number
+  height: number
+  depth_stats: {
+    min: number
+    max: number
+    mean: number
+  }
+  model_used: string
+  imgsz: number
 }
 
 export type DepthScaleListResponse = DepthScaleList

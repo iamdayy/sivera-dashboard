@@ -362,7 +362,7 @@ const route = useRoute()
 const router = useRouter()
 const apiStore = useApiStore()
 const toast = useToast()
-const isActive = useConnectionScope()
+const { isActive, getApiKey } = useConnectionScope()
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
