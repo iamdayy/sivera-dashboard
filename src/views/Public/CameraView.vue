@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import PublicWhepPlayer from '@/components/media/PublicWhepPlayer.vue'
-import { Video, Wifi, WifiOff, AlertCircle, XCircle, Package } from '@lucide/vue'
 import { Badge, Button } from '@/components/ui'
-import type { LatestPrediction, AutoPredictionLivePayload } from '@/types'
 import { createSSEConnection } from '@/services/publicPredictions'
+import type { AutoPredictionLivePayload, LatestPrediction } from '@/types'
+import { AlertCircle, Package, Video, XCircle } from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const cameraId = route.params.cameraId as string
@@ -17,10 +17,9 @@ const error = ref<string | null>(null)
 const eventSource = ref<EventSource | null>(null)
 const connected = ref(false)
 const lastUpdate = ref<Date | null>(null)
-const showOverlay = ref(true)
 
-// Canvas overlay for segmentation (raw-coordinate mask rendered on top of the live frame)
-const overlayCanvas = shallowRef<HTMLCanvasElement | null>(null)
+// Canvas overlay for segmentation mask rendered on top of the live video frame
+const maskCanvas = shallowRef<HTMLCanvasElement | null>(null)
 const playerRef = shallowRef<{ videoRef: HTMLVideoElement | null } | null>(null)
 
 const videoRef = computed(() => playerRef.value?.videoRef ?? null)
@@ -84,25 +83,17 @@ const segmentationInfo = computed(() => {
   return livePayload.value?.segmentation ?? null
 })
 
-const hasLiveFrame = computed(() => !!livePayload.value?.frame_jpeg_base64)
-
-const liveFrameUrl = computed(() => {
-  const b64 = livePayload.value?.frame_jpeg_base64
-  if (!b64) return ''
-  return `data:image/jpeg;base64,${b64}`
-})
-
 const isStale = computed(() => {
   if (!lastUpdate.value) return false
   const diff = Date.now() - lastUpdate.value.getTime()
   return diff > 60000 // stale after 60 seconds
 })
 
-// Draw the real mask overlay on the canvas, aligned to the video frame size.
-function drawOverlay() {
-  if (!overlayCanvas.value || !videoRef.value) return
+// Draw the real mask overlay on the canvas, aligned to the live video frame.
+function drawMask() {
+  if (!maskCanvas.value || !videoRef.value) return
 
-  const canvas = overlayCanvas.value
+  const canvas = maskCanvas.value
   const video = videoRef.value
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -112,26 +103,29 @@ function drawOverlay() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   const seg = livePayload.value?.segmentation
-  if (!seg || !seg.has_mask || !seg.overlay_png_base64) {
+  if (!seg || !seg.has_mask) {
     return
   }
 
-  const img = new Image()
-  img.onload = () => {
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    const pct = seg.waste_fraction_pct?.toFixed(1) ?? '0'
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 16px system-ui'
-    ctx.fillText(`Waste: ${pct}%`, 12, 28)
+  // Draw overlay PNG from SSE (raw-coordinate mask rendered on top of live frame)
+  if (seg.overlay_png_base64) {
+    const img = new Image()
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const pct = seg.waste_fraction_pct?.toFixed(1) ?? '0'
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 16px system-ui'
+      ctx.fillText(`Waste: ${pct}%`, 12, 28)
+    }
+    img.onerror = () => {
+      console.error('Failed to decode overlay PNG')
+    }
+    img.src = `data:image/png;base64,${seg.overlay_png_base64}`
   }
-  img.onerror = () => {
-    console.error('Failed to decode overlay PNG')
-  }
-  img.src = `data:image/png;base64,${seg.overlay_png_base64}`
 }
 
-watch(livePayload, drawOverlay)
-watch(() => videoRef.value?.videoWidth, drawOverlay)
+watch(livePayload, drawMask)
+watch(() => videoRef.value?.videoWidth, drawMask)
 
 onMounted(() => {
   fetchLatestPrediction()
@@ -182,42 +176,20 @@ function getImageUrl(path: string): string {
         </div>
       </div>
 
-      <div v-else-if="error" class="card max-w-2xl mx-auto text-center py-12">
-        <XCircle class="w-12 h-12 text-negative mx-auto mb-4" aria-hidden="true" />
-        <h2 class="text-lg font-medium text-text mb-2">Gagal memuat data</h2>
-        <p class="text-text-muted mb-4">{{ error }}</p>
-        <Button variant="outline" @click="fetchLatestPrediction">Coba Lagi</Button>
-      </div>
-
       <div v-else class="space-y-6">
         <!-- Live Video + Overlay -->
         <div class="card overflow-hidden">
           <div class="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">
-            <PublicWhepPlayer
-              ref="playerRef"
-              :camera-id="cameraId"
-              class="w-full h-full"
-            />
+            <PublicWhepPlayer ref="playerRef" :camera-id="cameraId" class="w-full h-full" />
 
-            <!-- Original frame from RAM when segmentation is negative / WHEP unavailable -->
-            <img
-              v-if="hasLiveFrame && !livePayload?.segmentation?.has_mask"
-              :src="liveFrameUrl"
-              :alt="`Frame ${cameraId}`"
-              class="absolute inset-0 w-full h-full object-cover opacity-80"
-            />
-
-            <!-- Segmentation Overlay Canvas (real mask, raw coordinates) -->
-            <canvas
-              ref="overlayCanvas"
-              v-if="showOverlay && livePayload?.segmentation?.has_mask"
-              class="absolute inset-0 pointer-events-none"
-              style="mix-blend-mode: multiply;"
-            />
+            <!-- Segmentation Overlay Canvas (real mask on top of live video) -->
+            <canvas ref="maskCanvas" v-if="livePayload?.segmentation?.has_mask"
+              class="absolute inset-0 pointer-events-none" style="mix-blend-mode: multiply;" />
 
             <!-- Status indicator overlay -->
             <div class="absolute top-3 right-3 flex gap-2">
-              <span v-if="connected" class="px-2 py-1 text-xs bg-green-600/80 text-white rounded flex items-center gap-1">
+              <span v-if="connected"
+                class="px-2 py-1 text-xs bg-green-600/80 text-white rounded flex items-center gap-1">
                 <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 Live
               </span>
@@ -227,8 +199,8 @@ function getImageUrl(path: string): string {
             </div>
 
             <!-- No segmentation indicator -->
-            <div v-if="showOverlay && livePayload && !livePayload.segmentation?.has_mask" 
-                 class="absolute inset-0 flex items-center justify-center bg-gray-900/50">
+            <div v-if="livePayload && !livePayload.segmentation?.has_mask"
+              class="absolute inset-0 flex items-center justify-center bg-gray-900/50">
               <div class="text-center text-white">
                 <Package class="w-12 h-12 mx-auto mb-3 text-gray-500" />
                 <p>Tidak ada segmentasi sampah terdeteksi</p>
@@ -251,7 +223,8 @@ function getImageUrl(path: string): string {
               </div>
               <p class="text-xs text-text-muted mt-2">
                 Metode: {{ livePayload?.volume_method || '-' }}
-                <span v-if="livePayload?.volume_liters === null && livePayload?.segmentation?.has_mask" class="text-xs text-warning ml-2">
+                <span v-if="livePayload?.volume_liters === null && livePayload?.segmentation?.has_mask"
+                  class="text-xs text-warning ml-2">
                   (volume tidak valid)
                 </span>
               </p>
@@ -297,29 +270,23 @@ function getImageUrl(path: string): string {
           </div>
           <div class="p-4">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div
-                v-for="outputType in Object.keys(latestPrediction?.outputs || {})"
-                :key="outputType"
-                class="card overflow-hidden"
-              >
+              <div v-for="outputType in Object.keys(latestPrediction?.outputs || {})" :key="outputType"
+                class="card overflow-hidden">
                 <div class="p-3 border-b border-border bg-muted/50">
                   <h3 class="text-sm font-medium text-text capitalize">{{ outputType.replace(/_/g, ' ') }}</h3>
                 </div>
                 <div class="aspect-video relative bg-neutral-bg">
-                  <img
-                    v-if="latestPrediction?.outputs[outputType]"
-                    :src="getImageUrl(latestPrediction.outputs[outputType])"
-                    :alt="outputType"
-                    class="w-full h-full object-cover"
-                  />
+                  <img v-if="latestPrediction?.outputs[outputType]"
+                    :src="getImageUrl(latestPrediction.outputs[outputType])" :alt="outputType"
+                    class="w-full h-full object-cover" />
                   <div v-else class="absolute inset-0 flex items-center justify-center text-text-muted">
                     Tidak tersedia
                   </div>
                 </div>
               </div>
 
-              <div v-if="!latestPrediction?.outputs || Object.keys(latestPrediction.outputs).length === 0" 
-                   class="col-span-full text-center py-8 text-text-muted">
+              <div v-if="!latestPrediction?.outputs || Object.keys(latestPrediction.outputs).length === 0"
+                class="col-span-full text-center py-8 text-text-muted">
                 Belum ada output prediksi tersedia
               </div>
             </div>
@@ -334,6 +301,14 @@ function getImageUrl(path: string): string {
           </pre>
         </details>
       </div>
+
+      <div v-if="error" class="card max-w-2xl mx-auto text-center py-12">
+        <XCircle class="w-12 h-12 text-negative mx-auto mb-4" aria-hidden="true" />
+        <h2 class="text-lg font-medium text-text mb-2">Gagal memuat data</h2>
+        <p class="text-text-muted mb-4">{{ error }}</p>
+        <Button variant="outline" @click="fetchLatestPrediction">Coba Lagi</Button>
+      </div>
+
     </main>
 
     <footer class="border-t border-border bg-card py-4">
