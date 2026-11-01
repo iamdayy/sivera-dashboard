@@ -1,5 +1,5 @@
 import { apiClient, cameraPath, normalizeApiError } from './api'
-import type { Camera, CameraDetail, CameraList, CreateCameraPayload, UpdateCameraPayload, StreamResponse } from '@/types'
+import type { Camera, CameraDetail, CameraList, CreateCameraPayload, UpdateCameraPayload, StreamResponse, AutoPredictConfig, AutoPredictConfigUpdate } from '@/types'
 
 export async function listCameras(page = 1, pageSize = 20): Promise<CameraList> {
   try {
@@ -50,6 +50,24 @@ export async function deleteCamera(cameraId: string): Promise<void> {
 export async function getCameraStreamStatus(cameraId: string): Promise<StreamResponse> {
   try {
     return (await apiClient.get<StreamResponse>(cameraPath(cameraId, '/stream'))).data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function getAutoPredictConfig(cameraId: string): Promise<AutoPredictConfig> {
+  try {
+    const response = await apiClient.get<AutoPredictConfig>(cameraPath(cameraId, '/auto-predict'))
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
+export async function updateAutoPredictConfig(cameraId: string, payload: AutoPredictConfigUpdate): Promise<AutoPredictConfig> {
+  try {
+    const response = await apiClient.patch<AutoPredictConfig>(cameraPath(cameraId, '/auto-predict'), payload)
+    return response.data
   } catch (error) {
     throw normalizeApiError(error)
   }

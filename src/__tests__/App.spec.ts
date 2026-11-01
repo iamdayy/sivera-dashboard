@@ -7,9 +7,7 @@ import LandingPage from '../views/LandingPage.vue'
 import Dashboard from '../views/Dashboard/Index.vue'
 import Home from '../views/Dashboard/Home.vue'
 import Cameras from '../views/Dashboard/Cameras.vue'
-import Calibrations from '../views/Dashboard/Calibrations.vue'
-import GroundReferences from '../views/Dashboard/GroundReferences.vue'
-import Predictions from '../views/Dashboard/Predictions.vue'
+import CalibrationUnified from '../views/Dashboard/CalibrationUnified.vue'
 import Settings from '../views/Dashboard/Settings.vue'
 
 const routes = [
@@ -17,9 +15,7 @@ const routes = [
   { path: '/dashboard', component: Dashboard, children: [
     { path: '', component: Home },
     { path: 'cameras', component: Cameras },
-    { path: 'calibrations', component: Calibrations },
-    { path: 'ground-references', component: GroundReferences },
-    { path: 'predictions', component: Predictions },
+    { path: 'cameras/:id/calibration', component: CalibrationUnified },
     { path: 'settings', component: Settings },
   ]},
 ]

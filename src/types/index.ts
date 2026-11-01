@@ -402,3 +402,62 @@ export interface DepthScalePreviewResponse {
 }
 
 export type DepthScaleListResponse = DepthScaleList
+
+export interface AutoPredictConfig {
+  enabled: boolean
+  interval_sec: number
+  source_type: 'upload' | 'rtsp_frame' | 'latest_rtsp'
+  seg_model: string
+  seg_conf: number
+  seg_classes: string[] | null
+  volume_cell_m: number
+  volume_min_pts_per_cell: number
+  return_outputs: string[]
+  max_frame_age_sec: number
+}
+
+export interface AutoPredictConfigUpdate {
+  enabled?: boolean
+  interval_sec?: number
+  source_type?: 'upload' | 'rtsp_frame' | 'latest_rtsp'
+  seg_model?: string
+  seg_conf?: number
+  seg_classes?: string[] | null
+  volume_cell_m?: number
+  volume_min_pts_per_cell?: number
+  return_outputs?: string[] | null
+  max_frame_age_sec?: number
+}
+
+export interface AutoPredictionLivePayload {
+  run_id: string
+  camera_id: string
+  started_at: string | null
+  captured_at: string | null
+  completed_at: string | null
+  frame_w: number
+  frame_h: number
+  frame_jpeg_base64: string | null
+  segmentation: {
+    has_mask: boolean
+    waste_fraction_pct: number | null
+    mask_png_base64: string | null
+    overlay_png_base64: string | null
+    coordinate_space: string
+  }
+  volume_liters: number | null
+  volume_method: string | null
+  saved: boolean
+  job_id: string | null
+  skip_reason: string | null
+  error_code: string | null
+}
+
+export interface LatestPrediction {
+  job_id: string
+  camera_id: string
+  completed_at: string | null
+  volume_liters: number | null
+  outputs: Record<string, string>
+  seg_classes: string[] | null
+}

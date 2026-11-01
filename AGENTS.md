@@ -41,6 +41,7 @@ Check `package.json` if a command fails or scripts change. Do not add Vuetify or
 8. The current backend supports `upload`, `rtsp_frame`, and `latest_rtsp` through queued prediction jobs. Do not present browser playback or RTSP inference as verified without live evidence. RTSP sources must omit `file` and `timestamp`.
 9. HTTP 202 returns a persisted `job_id`; use the prediction GET endpoints for status and paginated history. Do not invent cancellation/deletion endpoints. Aborting an HTTP request does not cancel backend work.
 10. Render artifact URLs only when returned by the API.
+11. Public playback at `/public/cameras/:cameraId` uses `/api/v1/public/cameras/{camera_id}/stream/whep` and `VITE_API_BASE_URL`, without API keys or cookies. Require OPTIONS 204, POST 201 SDP, trusted backend Location, and readable signaling headers. Preserve public error messages, report connected only after the peer connects, and clean up sessions on disposal. Do not log session URLs. Use `e2e/public-whep.live.spec.ts` for opt-in real playback/cleanup verification.
 
 Historical note: before the MediaMTX backend update, this file documented unprefixed camera routes, unimplemented RTSP prediction, and synchronous upload prediction. Those statements describe the old contract. Current depth readiness reads `/ground-models/{ground_model_id}/depth-scales/active`; calibration and ground-model GETs alone are insufficient.
 

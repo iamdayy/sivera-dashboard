@@ -16,6 +16,24 @@ Rencana dan hasil tiap tahap dicatat di [`.agents/plan/mediamtx-execution.md`](.
 
 Historis: backend sebelumnya memakai request kamera tanpa prefix, belum mengimplementasikan RTSP prediction, dan menjalankan upload prediction secara sinkron. Kontrak tersebut tidak berlaku untuk snapshot MediaMTX pada `openapi.json` saat ini. Tetap periksa live `/openapi.json` saat berganti deployment.
 
+### Live view publik
+
+Buka `/public/cameras/<camera_id>` untuk playback tanpa API Key. Halaman memakai `VITE_API_BASE_URL` sebagai origin API dan endpoint `/api/v1/public/cameras/{camera_id}/stream/whep`. Administrator mengaktifkan stream melalui pengelolaan kamera.
+
+WHEP memerlukan OPTIONS **204**, POST **201** dengan SDP answer dan `Location` backend, serta DELETE **204**. Header `Location`, `ETag`, `Link`, `Accept-Post`, dan `Accept-Patch` harus diekspos lewat CORS backend. OPTIONS preflight CORS boleh **200**. Error “Respons signaling WHEP tidak valid” pada proxy lama diperbaiki di backend; restart API yang berjalan tanpa reload setelah pembaruan.
+
+Verifikasi Chrome lokal pada 31 Oktober 2026 berhasil memutar 1920×1080 dan menutup sesi saat navigasi. Tes live berikut memeriksa playback, header yang terbaca browser, dan cleanup tanpa mengirim prediksi:
+
+```sh
+PLAYWRIGHT_BASE_URL=http://localhost:5173 \
+PLAYWRIGHT_CHROMIUM_CHANNEL=chrome \
+SIVERA_API_BASE_URL=http://localhost:8000 \
+SIVERA_CAMERA_ID='<camera_uuid>' \
+bun run test:e2e e2e/public-whep.live.spec.ts --project=chromium
+```
+
+Gunakan Chrome yang terpasang atau hilangkan `PLAYWRIGHT_CHROMIUM_CHANNEL` untuk browser Playwright. Dev server harus memakai `VITE_API_BASE_URL` yang sama. Tanpa variabel kamera/API, tes live dilewati. Tes unit kontrak/state publik ada di `PublicWhepService.spec.ts` dan `usePublicWhepPlayer.spec.ts`; keduanya memakai mock. Segmentasi positif dan penyimpanan volume berubah masih memerlukan uji scene sampah.
+
 ## Eksekusi readiness dan perjalanan operator
 
 Rencana aktif: [`.agents/plan/agents-design-execution.md`](.agents/plan/agents-design-execution.md). P0 menyatukan readiness Ringkasan/Analisis, memeriksa kecocokan ID kalibrasi/reference/model/skala aktif, serta membedakan konfigurasi kurang dari kegagalan akses/jaringan. Analisis memeriksa ulang sebelum POST dan menolak hasil pemeriksaan stale. Upload legacy tetap didukung hanya untuk gambar yang sudah undistorted; RTSP memerlukan intrinsics asli dan dimensi kalibrasi.

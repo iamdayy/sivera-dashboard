@@ -52,6 +52,7 @@
               <th scope="col" class="numeric">Lokasi</th>
               <th scope="col">Status Kalibrasi</th>
               <th scope="col">Status Stream</th>
+              <th scope="col">Auto-Prediksi</th>
               <th scope="col">Aksi</th>
             </tr>
           </thead>
@@ -79,6 +80,11 @@
                 </Badge>
               </td>
               <td>
+                <Badge :class="getAutoPredictBadgeClass(camera.id)" :title="getAutoPredictStatusTooltip(camera.id)">
+                  {{ getAutoPredictStatusText(camera.id) }}
+                </Badge>
+              </td>
+              <td>
                 <div class="flex flex-wrap gap-2">
                   <RouterLink :to="`/dashboard/cameras/${camera.id}/calibration`">
                     <Button 
@@ -92,15 +98,17 @@
                       {{ cameraStatuses[camera.id] === 'active' ? 'Analisis' : 'Kalibrasi' }}
                     </Button>
                   </RouterLink>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    :aria-label="`Pratinjau ${camera.name}`"
-                    @click="openPreview(camera)"
-                    :disabled="!camera.stream_enabled"
-                  >
-                    Pratinjau
-                  </Button>
+                  <RouterLink :to="`/public/cameras/${camera.id}`" target="_blank">
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      :aria-label="`Lihat live view ${camera.name}`"
+                      :disabled="!camera.stream_enabled"
+                    >
+                      <Eye class="w-3 h-3 mr-1" />
+                      Lihat Kamera
+                    </Button>
+                  </RouterLink>
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -109,6 +117,15 @@
                     :disabled="!camera.stream_enabled || loading"
                   >
                     Snapshot
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    :aria-label="`Konfigurasi Auto-Prediksi ${camera.name}`"
+                    @click="fetchAutoPredictConfig(camera.id); openAutoPredictConfigDialog(camera)"
+                    :disabled="!camera.stream_enabled"
+                  >
+                    Auto-Prediksi
                   </Button>
                   <Button 
                     variant="ghost" 
@@ -292,46 +309,6 @@
       </DialogContent>
     </Dialog>
 
-    <!-- Preview Dialog -->
-    <Dialog
-      v-model:open="isPreviewDialogOpen"
-      :show-close-button="!previewLoading"
-      :disabled="previewLoading"
-      content-class="max-w-4xl"
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Pratinjau Stream: {{ previewCamera?.name }}</DialogTitle>
-          <DialogDescription>Stream WHEP receive-only. Gunakan tombol Reconnect jika koneksi terputus.</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <div v-if="previewLoading" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center">
-            <div class="text-center text-text">
-              <div class="spinner mx-auto mb-3" style="width: 2.5rem; height: 2.5rem; border-width: 3px;" />
-              <p>Memuat stream...</p>
-            </div>
-          </div>
-          <div v-else-if="previewError || !streamState?.whep_url" class="aspect-video bg-neutral-bg rounded-lg flex items-center justify-center p-4">
-            <div class="text-center text-text">
-              <XCircle class="w-12 h-12 text-negative mx-auto mb-3" aria-hidden="true" />
-              <p class="mb-3">{{ previewError || 'Stream tidak tersedia. Aktifkan stream pada kamera ini.' }}</p>
-              <Button variant="outline" @click="loadStream">Coba Lagi</Button>
-            </div>
-          </div>
-          <WhepPlayer v-else :camera-id="previewCamera!.id" :whep-path="streamState!.whep_url!" :context="apiContext" class="aspect-video" />
-          <div v-if="streamState" class="flex flex-wrap gap-4 text-sm text-text-muted">
-            <span>Status: <span class="text-text capitalize">{{ streamState.status }}</span></span>
-            <span>Synced: <span class="text-text">{{ streamState.synced ? 'Ya' : 'Tidak' }}</span></span>
-            <span>Tracks: <span class="text-text">{{ streamState.tracks.join(', ') || '-' }}</span></span>
-            <span>Checked: <span class="text-text">{{ new Date(streamState.checked_at).toLocaleTimeString() }}</span></span>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="secondary" @click="isPreviewDialogOpen = false">Tutup</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
     <!-- Snapshot Dialog -->
     <Dialog
       v-model:open="isSnapshotDialogOpen"
@@ -387,6 +364,26 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Auto-Predict Config Dialog -->
+    <AutoPredictConfigDialog
+      v-if="autoPredictConfigDialogCamera"
+      :camera-id="autoPredictConfigDialogCamera.id"
+      :initial-config="autoPredictConfigs[autoPredictConfigDialogCamera.id] ?? {
+        enabled: false,
+        interval_sec: 30,
+        source_type: 'latest_rtsp',
+        seg_model: 'yolo26n-seg.pt',
+        seg_conf: 0.25,
+        seg_classes: null,
+        volume_cell_m: 0.05,
+        volume_min_pts_per_cell: 2,
+        return_outputs: ['mask', 'overlay', 'bev_overlay', 'volume_heatmap'],
+        max_frame_age_sec: 10,
+      }"
+      @update="handleAutoPredictConfigUpdate"
+      @close="autoPredictConfigDialogCamera = null"
+    />
   </div>
 </template>
 
@@ -396,7 +393,7 @@ import { useToast } from '@/composables/useToast'
 import { useConnectionScope } from '@/composables/useConnectionScope'
 import { cameraPayload, createCameraForm } from '@/lib/camera-form'
 import { useApiStore } from '@/stores/api'
-import type { Camera, SnapshotResponse, StreamResponse } from '@/types'
+import type { Camera, SnapshotResponse, StreamResponse, AutoPredictConfig, AutoPredictConfigUpdate } from '@/types'
 import { useRouter } from 'vue-router'
 import {
   createCamera as apiCreateCamera,
@@ -404,16 +401,18 @@ import {
   updateCamera as apiUpdateCamera,
   getCamera,
   listCameras,
+  getAutoPredictConfig,
+  updateAutoPredictConfig,
 } from '@/services/cameras'
 import { getLatestSnapshot, takeSnapshot } from '@/services/snapshots'
 import { getStream, updateStream } from '@/services/streams'
 import AuthenticatedArtifact from '@/components/AuthenticatedArtifact.vue'
-import WhepPlayer from '@/components/media/WhepPlayer.vue'
+import AutoPredictConfigDialog from '@/views/Dashboard/AutoPredictConfigDialog.vue'
 
 // UI Components
 import { Button, Input, Label, Badge, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui'
 
-import { Video, AlertCircle, CheckCircle, XCircle, Brain, Settings } from '@lucide/vue'
+import { Video, AlertCircle, CheckCircle, XCircle, Brain, Settings, Eye, ExternalLink } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 
 const router = useRouter()
@@ -438,22 +437,19 @@ const isRemoveSourceDialogOpen = ref(false)
 const removingSource = ref(false)
 const removeSourceError = ref('')
 
-const isPreviewDialogOpen = ref(false)
-const previewCamera = ref<Camera | null>(null)
-const streamState = ref<StreamResponse | null>(null)
-const previewLoading = ref(false)
-const previewError = ref('')
-
 const isSnapshotDialogOpen = ref(false)
 const snapshotCamera = ref<Camera | null>(null)
 const latestSnapshot = ref<SnapshotResponse | null>(null)
 const snapshotLoading = ref(false)
 const snapshotError = ref('')
 
+const autoPredictConfigs = ref<Record<string, AutoPredictConfig>>({})
+const autoPredictLoading = ref<Record<string, boolean>>({})
+const autoPredictError = ref<Record<string, string>>({})
+
 const togglingStreamId = ref<string | null>(null)
 
 const hasApiKey = computed(() => apiStore.hasApiKey)
-const apiContext = computed(() => apiStore.connectionContext)
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
@@ -495,6 +491,63 @@ async function fetchCameras() {
       cameraStatuses.value[camera.id] = 'error'
     }
   }))
+}
+
+async function fetchAutoPredictConfig(cameraId: string) {
+  if (autoPredictLoading.value[cameraId]) return
+  autoPredictLoading.value[cameraId] = true
+  autoPredictError.value[cameraId] = ''
+  try {
+    const config = await getAutoPredictConfig(cameraId)
+    if (!isActive()) return
+    autoPredictConfigs.value[cameraId] = config
+  } catch (error: unknown) {
+    if (!isActive()) return
+    autoPredictError.value[cameraId] = errorMessage(error)
+  } finally {
+    autoPredictLoading.value[cameraId] = false
+  }
+}
+
+function getAutoPredictBadgeClass(cameraId: string): string {
+  const config = autoPredictConfigs.value[cameraId]
+  if (!config) return 'badge-neutral'
+  if (config.enabled) return 'badge-positive'
+  return 'badge-neutral'
+}
+
+function getAutoPredictStatusText(cameraId: string): string {
+  const config = autoPredictConfigs.value[cameraId]
+  if (!config) return 'Tidak dikonfigurasi'
+  if (config.enabled) return `Aktif (${config.interval_sec}s)`
+  return 'Nonaktif'
+}
+
+function getAutoPredictStatusTooltip(cameraId: string): string {
+  const config = autoPredictConfigs.value[cameraId]
+  if (!config) return 'Belum dikonfigurasi'
+  if (!config.enabled) return 'Auto-prediksi dinonaktifkan'
+  if (autoPredictError.value[cameraId]) return `Error: ${autoPredictError.value[cameraId]}`
+  if (autoPredictLoading.value[cameraId]) return 'Memuat status...'
+  return `Interval: ${config.interval_sec}s, Sumber: ${config.source_type}`
+}
+
+async function handleAutoPredictConfigUpdate(newConfig: AutoPredictConfig) {
+  const cameraId = Object.keys(autoPredictConfigs.value).find(
+    k => autoPredictConfigs.value[k] === newConfig
+  )
+  if (!cameraId) return
+  
+  try {
+    const updated = await updateAutoPredictConfig(cameraId, newConfig as AutoPredictConfigUpdate)
+    if (!isActive()) return
+    autoPredictConfigs.value[cameraId] = updated
+    toast.success('Konfigurasi auto-prediksi diperbarui')
+  } catch (error: unknown) {
+    if (!isActive()) return
+    toast.error('Gagal memperbarui konfigurasi', { description: errorMessage(error) })
+    throw error
+  }
 }
 
 function getCalibrationBadgeClass(cameraId: string): string {
@@ -623,25 +676,10 @@ async function removeSource() {
   }
 }
 
-async function loadStream() {
-  if (!previewCamera.value) return
-  previewLoading.value = true
-  previewError.value = ''
-  try {
-    streamState.value = await getStream(previewCamera.value.id)
-  } catch (error) {
-    previewError.value = errorMessage(error)
-  } finally {
-    previewLoading.value = false
-  }
-}
+const autoPredictConfigDialogCamera = ref<Camera | null>(null)
 
-function openPreview(camera: Camera) {
-  previewCamera.value = camera
-  streamState.value = null
-  previewError.value = ''
-  isPreviewDialogOpen.value = true
-  loadStream()
+function openAutoPredictConfigDialog(camera: Camera) {
+  autoPredictConfigDialogCamera.value = camera
 }
 
 async function loadLatestSnapshot() {

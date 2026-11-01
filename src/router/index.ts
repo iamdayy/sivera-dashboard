@@ -9,6 +9,12 @@ const routes = [
     component: LandingPage
   },
   {
+    path: '/public/cameras/:cameraId',
+    name: 'PublicCameraView',
+    component: () => import('@/views/Public/CameraView.vue'),
+    meta: { public: true }
+  },
+  {
     path: '/dashboard',
     name: 'Dashboard',
     component: Dashboard,
@@ -29,11 +35,6 @@ const routes = [
         name: 'CameraCalibration',
         component: () => import('@/views/Dashboard/CalibrationUnified.vue'),
         meta: { requiresCamera: true }
-      },
-      {
-        path: 'predictions',
-        name: 'Predictions',
-        component: () => import('@/views/Dashboard/Predictions.vue')
       },
       {
         path: 'settings',

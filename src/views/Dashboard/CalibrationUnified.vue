@@ -1,24 +1,23 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch, nextTick, reactive } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useToast } from '@/composables/useToast'
-import { useApiStore } from '@/stores/api'
-import { useConnectionScope } from '@/composables/useConnectionScope'
-import { listCameras as apiListCameras, getCamera, getCameraStreamStatus } from '@/services/cameras'
-import { getActiveCalibration as apiGetActiveCalibration, listCalibrations, captureCalibrationFrames, activateCalibration, uploadCalibrationImages } from '@/services/calibrations'
-import { getActiveGroundReference, getActiveGroundModel, getGroundReferenceSource, createGroundReferenceSource, createGroundReference, getGroundReferenceSourceImageBlob } from '@/services/groundReferences'
-import { getDepthScaleContext, createDepthScalePreview, getDepthPreviewImageBlob, deleteDepthPreview, createDepthScale, getActiveDepthScale } from '@/services/depthScales'
-import { runPrediction } from '@/services/predictions'
-import { normalizeApiError } from '@/services/api'
-import type { Camera, Calibration, GroundReference, GroundModel, DepthScale, DepthScalePreviewResponse, DepthScaleCreate, DepthMeasurement, PredictionJob, SubmitPredictionPayload } from '@/types'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { ChevronDown, ChevronUp, Video, Camera as CameraIcon, MapPin, Brain, Settings, RotateCcw, Trash2, Eye, Download, Upload, X, CheckCircle, AlertCircle, Loader2, Image as ImageIcon, Ruler, Zap, HelpCircle, ChevronRight } from '@lucide/vue'
+import { useConnectionScope } from '@/composables/useConnectionScope'
+import { useToast } from '@/composables/useToast'
+import { normalizeApiError } from '@/services/api'
+import { activateCalibration, captureCalibrationFrames, listCalibrations, uploadCalibrationImages } from '@/services/calibrations'
+import { getCamera, getCameraStreamStatus } from '@/services/cameras'
+import { createDepthScale, createDepthScalePreview, getActiveDepthScale, getDepthPreviewImageBlob } from '@/services/depthScales'
+import { createGroundReference, createGroundReferenceSource, getActiveGroundModel, getActiveGroundReference, getGroundReferenceSource, getGroundReferenceSourceImageBlob } from '@/services/groundReferences'
+import { runPrediction } from '@/services/predictions'
+import { useApiStore } from '@/stores/api'
+import type { Calibration, Camera, DepthScale, DepthScaleCreate, DepthScalePreviewResponse, GroundModel, GroundReference, PredictionJob, SubmitPredictionPayload } from '@/types'
+import { AlertCircle, Brain, Camera as CameraIcon, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Eye, Image as ImageIcon, Loader2, MapPin, RotateCcw, Settings, Upload, Video, X, Zap } from '@lucide/vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
@@ -95,7 +94,7 @@ const predictionParams = reactive({
   seg_classes: [] as string[],
   volume_cell_m: 0.05,
   volume_min_pts_per_cell: 2,
-  return_outputs: ['mask', 'overlay', 'bev_image', 'bev_mask_proyeksi', 'instances'] as string[],
+  return_outputs: ['mask', 'overlay', 'bev_image', 'bev_mask_proyeksi', 'instances_json'] as string[],
 })
 
 const stepLabels: Record<StepKey, string> = {
@@ -293,11 +292,11 @@ async function createGroundRefSource() {
     const sourceDetail = await getGroundReferenceSource(cameraId.value, source.id)
     sourceWidth.value = sourceDetail.width
     sourceHeight.value = sourceDetail.height
-    
+
     // Load the image blob and create object URL
     const blob = await getGroundReferenceSourceImageBlob(cameraId.value, source.id)
     sourceImage.value = URL.createObjectURL(blob)
-    
+
     groundPoints.value = []
     showSourceDialog.value = true
   } catch (error) {
@@ -370,15 +369,15 @@ async function runDepthPreview() {
       testImage = activeCalibration.value.calib_images?.[0]
     }
     // For upload, we'd need to upload first - simplified for now
-    
+
     const preview = await createDepthScalePreview(cameraId.value, activeGroundModel.value.id, { test_image: testImage, depth_model: 'yolo26n-depth.pt' })
     depthPreview.value = preview
     depthPreviewImageKey.value = preview.depth_image_id
-    
+
     // Load visualization
     const blob = await getDepthPreviewImageBlob(cameraId.value, activeGroundModel.value.id, preview.depth_image_id)
     depthPreviewImage.value = URL.createObjectURL(blob)
-    
+
     depthMeasurementPoints.value = []
     updateStepStatus()
     toastSuccess('Pratinjau kedalaman siap', { description: 'Klik pada gambar untuk menambahkan titik pengukuran' })
@@ -411,7 +410,7 @@ async function createDepthScaleFromPreview() {
       toastError('Error', { description: 'Semua titik harus diisi jaraknya (meter)' })
       return
     }
-    
+
     const payload: DepthScaleCreate = {
       depth_image_id: depthPreview.value.depth_image_id,
       depth_model: 'yolo26n-depth.pt',
@@ -419,7 +418,7 @@ async function createDepthScaleFromPreview() {
       clip_max_m: 50.0,
       known_distances: depthMeasurementPoints.value.map(p => ({ x: p.x, y: p.y, distance_m: p.distance_m })),
     }
-    
+
     const scale = await createDepthScale(cameraId.value, activeGroundModel.value.id, payload)
     depthScale.value = scale
     depthPreview.value = null
@@ -467,7 +466,7 @@ async function runPredictionJob() {
       volume_min_pts_per_cell: predictionParams.volume_min_pts_per_cell,
       return_outputs: predictionParams.return_outputs,
     }
-    
+
     const result = await runPrediction(cameraId.value, payload)
     predictionJob.value = {
       id: result.job_id,
@@ -533,8 +532,10 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
         <div>
           <CardTitle class="text-xl">{{ camera.name }}</CardTitle>
           <div class="flex items-center gap-2 text-sm text-text-muted mt-1">
-            <span :class="streamStatus === 'online' ? 'text-green-600' : 'text-gray-500'" class="flex items-center gap-1">
-              <span class="w-2 h-2 rounded-full" :class="streamStatus === 'online' ? 'bg-green-500' : 'bg-gray-400'"></span>
+            <span :class="streamStatus === 'online' ? 'text-green-600' : 'text-gray-500'"
+              class="flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full"
+                :class="streamStatus === 'online' ? 'bg-green-500' : 'bg-gray-400'"></span>
               RTSP: {{ streamStatus === 'online' ? 'Live' : streamStatus }}
             </span>
             <span class="text-gray-300">|</span>
@@ -542,7 +543,8 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
           </div>
         </div>
         <div class="flex gap-2">
-          <Button variant="outline" size="sm" @click="goToPredictions" :disabled="!hasApiKey || !activeCalibration || !activeGroundModel || !depthScale">
+          <Button variant="outline" size="sm" @click="goToPredictions"
+            :disabled="!hasApiKey || !activeCalibration || !activeGroundModel || !depthScale">
             <Brain class="w-4 h-4 mr-1" />
             Buka Analisis
           </Button>
@@ -554,19 +556,21 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
     <div class="card">
       <CardContent class="pt-4 pb-2">
         <div class="flex items-center">
-          <template v-for="(step, index) in ['calibration', 'groundReference', 'depthEstimation', 'prediction']" :key="step">
+          <template v-for="(step, index) in ['calibration', 'groundReference', 'depthEstimation', 'prediction']"
+            :key="step">
             <div class="flex items-center">
               <div class="flex items-center gap-2">
                 <div class="flex items-center gap-1.5">
                   <span :class="[
                     'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
-                    isStepDone(step) ? 'bg-green-100 text-green-700' : 
-                    isStepActive(step) ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                    isStepDone(step) ? 'bg-green-100 text-green-700' :
+                      isStepActive(step) ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
                   ]">
                     <CheckCircle v-if="isStepDone(step)" class="w-4 h-4" />
                     <component v-else :is="stepIcons[step as keyof typeof stepIcons]" class="w-4 h-4" />
                   </span>
-                  <span class="text-sm font-medium" :class="isStepDone(step) ? 'text-green-700' : isStepActive(step) ? 'text-blue-700' : 'text-gray-500'">
+                  <span class="text-sm font-medium"
+                    :class="isStepDone(step) ? 'text-green-700' : isStepActive(step) ? 'text-blue-700' : 'text-gray-500'">
                     {{ stepLabels[step as keyof typeof stepLabels] }}
                   </span>
                 </div>
@@ -583,9 +587,12 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
       <CardHeader class="pb-2" @click="toggleCollapse('calibration')" style="cursor: pointer;">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <component :is="stepIcons.calibration" :class="isStepDone('calibration') ? 'text-green-600' : isStepActive('calibration') ? 'text-blue-600' : 'text-gray-400'" class="w-5 h-5" />
+            <component :is="stepIcons.calibration"
+              :class="isStepDone('calibration') ? 'text-green-600' : isStepActive('calibration') ? 'text-blue-600' : 'text-gray-400'"
+              class="w-5 h-5" />
             <CardTitle class="text-lg">Langkah 1: Kalibrasi Kamera</CardTitle>
-            <Badge :variant="isStepDone('calibration') ? 'default' : isStepActive('calibration') ? 'secondary' : 'outline'">
+            <Badge
+              :variant="isStepDone('calibration') ? 'default' : isStepActive('calibration') ? 'secondary' : 'outline'">
               {{ isStepDone('calibration') ? 'Selesai ✓' : isStepActive('calibration') ? 'Aktif' : 'Belum' }}
             </Badge>
           </div>
@@ -613,33 +620,34 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
               <Input v-model.number="captureConfig.alpha" type="number" step="0.1" min="0" max="1" />
             </div>
           </div>
-          
+
           <div class="flex flex-wrap gap-2">
-            <Button 
-              variant="default" 
+            <Button variant="default"
               :disabled="!hasApiKey || !getApiKey() || streamStatus !== 'online' || calibrationBusy"
-              @click="showCaptureDialog = true"
-            >
+              @click="showCaptureDialog = true">
               <Video class="w-4 h-4 mr-1" />
               Mulai Capture dari Stream RTSP
             </Button>
-            <Button variant="outline" :disabled="!hasApiKey || !getApiKey() || calibrationBusy" @click="showCreateDialog = true">
+            <Button variant="outline" :disabled="!hasApiKey || !getApiKey() || calibrationBusy"
+              @click="showCreateDialog = true">
               <Upload class="w-4 h-4 mr-1" />
               Unggah Gambar Kalibrasi
             </Button>
           </div>
-          
+
           <div v-if="calibrations.length > 0" class="border-t pt-4">
             <h4 class="font-medium mb-2">Riwayat Kalibrasi</h4>
             <div class="space-y-2">
-              <div v-for="calib in calibrations" :key="calib.id" class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div v-for="calib in calibrations" :key="calib.id"
+                class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
                   <span class="font-medium">v{{ calib.version }}</span>
                   <span class="text-sm text-gray-500 ml-2">RMS: {{ calib.rms_reproj?.toFixed(3) || 'N/A' }} px</span>
                   <Badge v-if="calib.is_active" class="ml-2" variant="default">Aktif</Badge>
                 </div>
                 <div class="flex gap-2">
-                  <Button variant="ghost" size="sm" @click="activateCalib(calib)" :disabled="calib.is_active || calibrationBusy">
+                  <Button variant="ghost" size="sm" @click="activateCalib(calib)"
+                    :disabled="calib.is_active || calibrationBusy">
                     <RotateCcw class="w-3 h-3 mr-1" /> Aktifkan
                   </Button>
                 </div>
@@ -647,13 +655,15 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
             </div>
           </div>
         </div>
-        
+
         <div v-else class="space-y-4">
           <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
             <div class="flex items-center justify-between">
               <div>
                 <p class="font-medium text-green-800">Kalibrasi Aktif: v{{ activeCalibration?.version }}</p>
-                <p class="text-sm text-green-700">RMS Reprojeksi: {{ activeCalibration?.rms_reproj?.toFixed(3) || 'N/A' }} px</p>
+                <p class="text-sm text-green-700">RMS Reprojeksi: {{ activeCalibration?.rms_reproj?.toFixed(3) || 'N/A'
+                  }}
+                  px</p>
               </div>
               <div class="flex gap-2">
                 <Button variant="outline" size="sm" @click="showCreateDialog = true">
@@ -672,9 +682,12 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
       <CardHeader class="pb-2" @click="toggleCollapse('groundReference')" style="cursor: pointer;">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <component :is="stepIcons.groundReference" :class="isStepDone('groundReference') ? 'text-green-600' : isStepActive('groundReference') ? 'text-blue-600' : 'text-gray-400'" class="w-5 h-5" />
+            <component :is="stepIcons.groundReference"
+              :class="isStepDone('groundReference') ? 'text-green-600' : isStepActive('groundReference') ? 'text-blue-600' : 'text-gray-400'"
+              class="w-5 h-5" />
             <CardTitle class="text-lg">Langkah 2: Referensi Tanah</CardTitle>
-            <Badge :variant="isStepDone('groundReference') ? 'default' : isStepActive('groundReference') ? 'secondary' : 'outline'">
+            <Badge
+              :variant="isStepDone('groundReference') ? 'default' : isStepActive('groundReference') ? 'secondary' : 'outline'">
               {{ isStepDone('groundReference') ? 'Selesai ✓' : isStepActive('groundReference') ? 'Aktif' : 'Belum' }}
             </Badge>
           </div>
@@ -686,28 +699,30 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
         <div v-if="!activeGroundModel" class="space-y-4">
           <AlertCircle class="w-5 h-5 text-yellow-500" v-if="!activeCalibration" />
           <p v-if="!activeCalibration" class="text-gray-500">Selesaikan kalibrasi terlebih dahulu</p>
-          
+
           <div v-else class="space-y-4">
-            <Button 
-              variant="default" 
+            <Button variant="default"
               :disabled="!hasApiKey || !getApiKey() || groundRefBusy || streamStatus !== 'online'"
-              @click="createGroundRefSource"
-            >
+              @click="createGroundRefSource">
               <CameraIcon class="w-4 h-4 mr-1" />
               Ambil Gambar Tanah dari Stream
             </Button>
-            
+
             <p class="text-sm text-gray-500">Atau gunakan mode manual (klik pada gambar kalibrasi)</p>
           </div>
         </div>
-        
+
         <div v-else class="space-y-4">
           <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
             <p class="font-medium text-green-800">Model Ground Aktif</p>
-            <p class="text-sm text-green-700">Ketinggian kamera: {{ activeGroundModel?.cam_height?.toFixed(2) || 'N/A' }} m | Pitch: {{ activeGroundModel?.pitch_down_deg?.toFixed(1) || 'N/A' }}°</p>
-            <p class="text-sm text-green-700">Error reprojeksi: {{ activeGroundModel?.reproj_err_px?.toFixed(2) || 'N/A' }} px</p>
+            <p class="text-sm text-green-700">Ketinggian kamera: {{ activeGroundModel?.cam_height?.toFixed(2) || 'N/A'
+              }} m
+              | Pitch: {{ activeGroundModel?.pitch_down_deg?.toFixed(1) || 'N/A' }}°</p>
+            <p class="text-sm text-green-700">Error reprojeksi: {{ activeGroundModel?.reproj_err_px?.toFixed(2) || 'N/A'
+              }}
+              px</p>
           </div>
-          
+
           <Button variant="outline" size="sm" @click="showSourceDialog = true">
             <RotateCcw class="w-3 h-3 mr-1" />
             Buat Referensi Baru
@@ -721,9 +736,12 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
       <CardHeader class="pb-2" @click="toggleCollapse('depthEstimation')" style="cursor: pointer;">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <component :is="stepIcons.depthEstimation" :class="isStepDone('depthEstimation') ? 'text-green-600' : isStepActive('depthEstimation') ? 'text-blue-600' : 'text-gray-400'" class="w-5 h-5" />
+            <component :is="stepIcons.depthEstimation"
+              :class="isStepDone('depthEstimation') ? 'text-green-600' : isStepActive('depthEstimation') ? 'text-blue-600' : 'text-gray-400'"
+              class="w-5 h-5" />
             <CardTitle class="text-lg">Langkah 3: Estimasi Kedalaman (YOLO26n-depth)</CardTitle>
-            <Badge :variant="isStepDone('depthEstimation') ? 'default' : isStepActive('depthEstimation') ? 'secondary' : 'outline'">
+            <Badge
+              :variant="isStepDone('depthEstimation') ? 'default' : isStepActive('depthEstimation') ? 'secondary' : 'outline'">
               {{ isStepDone('depthEstimation') ? 'Selesai ✓' : isStepActive('depthEstimation') ? 'Aktif' : 'Belum' }}
             </Badge>
           </div>
@@ -735,7 +753,7 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
         <div v-if="!depthScale">
           <AlertCircle class="w-5 h-5 text-yellow-500" v-if="!activeGroundModel" />
           <p v-if="!activeGroundModel" class="text-gray-500">Selesaikan referensi tanah terlebih dahulu</p>
-          
+
           <div v-else-if="!depthPreview" class="space-y-4">
             <div>
               <Label>Gambar Uji</Label>
@@ -750,82 +768,74 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div v-if="depthTestImageType === 'upload'" class="space-y-2">
               <input type="file" @change="handleDepthFileChange" accept="image/*" class="input w-full" />
               <p class="text-sm text-gray-500">File: {{ depthUploadFileName }}</p>
             </div>
-            
-            <Button 
-              variant="default" 
-              :disabled="!hasApiKey || !getApiKey() || depthBusy"
-              @click="runDepthPreview"
-            >
+
+            <Button variant="default" :disabled="!hasApiKey || !getApiKey() || depthBusy" @click="runDepthPreview">
               <Loader2 v-if="depthBusy" class="w-4 h-4 mr-1 animate-spin" />
               <Brain v-else class="w-4 h-4 mr-1" />
               Jalankan YOLO Depth
             </Button>
           </div>
-          
+
           <!-- Depth Preview & Measurement -->
           <div v-else-if="depthPreview && !depthScale" class="space-y-4">
             <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <p class="font-medium text-blue-800">Pratinjau Kedalaman Siap</p>
-              <p class="text-sm text-blue-700">Model: {{ depthPreview.model_used }} | Ukuran: {{ depthPreview.width }}×{{ depthPreview.height }}</p>
-              <p class="text-sm text-blue-700">Depth Raw: Min {{ depthPreview.depth_stats.min.toFixed(2) }} | Max {{ depthPreview.depth_stats.max.toFixed(2) }} | Mean {{ depthPreview.depth_stats.mean.toFixed(2) }}</p>
+              <p class="text-sm text-blue-700">Model: {{ depthPreview.model_used }} | Ukuran: {{ depthPreview.width
+                }}×{{
+                depthPreview.height }}</p>
+              <p class="text-sm text-blue-700">Depth Raw: Min {{ depthPreview.depth_stats.min.toFixed(2) }} | Max {{
+                depthPreview.depth_stats.max.toFixed(2) }} | Mean {{ depthPreview.depth_stats.mean.toFixed(2) }}</p>
             </div>
-            
+
             <div class="relative" style="max-width: 100%;">
-              <img 
-                v-if="depthPreviewImage" 
-                :src="depthPreviewImage" 
-                alt="Depth visualization"
-                @click="addDepthPoint"
-                style="width: 100%; max-height: 600px; cursor: crosshair;"
-                class="border rounded-lg"
-              />
-              <div v-for="(point, index) in depthMeasurementPoints" :key="index" 
+              <img v-if="depthPreviewImage" :src="depthPreviewImage" alt="Depth visualization" @click="addDepthPoint"
+                style="width: 100%; max-height: 600px; cursor: crosshair;" class="border rounded-lg" />
+              <div v-for="(point, index) in depthMeasurementPoints" :key="index"
                 class="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                :style="{ left: (point.x / depthPreview!.width * 100) + '%', top: (point.y / depthPreview!.height * 100) + '%' }"
-              >
-                <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs bg-red-500 text-white px-1 rounded whitespace-nowrap">{{ index + 1 }}</span>
+                :style="{ left: (point.x / depthPreview!.width * 100) + '%', top: (point.y / depthPreview!.height * 100) + '%' }">
+                <span
+                  class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs bg-red-500 text-white px-1 rounded whitespace-nowrap">{{
+                  index + 1 }}</span>
               </div>
             </div>
-            
+
             <div class="space-y-2">
               <h4 class="font-medium">Titik Pengukuran (min 3)</h4>
-              <div v-for="(point, index) in depthMeasurementPoints" :key="index" class="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <div v-for="(point, index) in depthMeasurementPoints" :key="index"
+                class="flex items-center gap-2 p-2 bg-gray-50 rounded">
                 <span class="w-6 text-center text-sm font-medium">{{ index + 1 }}</span>
                 <span class="text-sm text-gray-600">x: {{ point.x }}, y: {{ point.y }}</span>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  min="0.01"
-                  placeholder="Jarak (meter)" 
-                  :value="point.distance_m || ''"
+                <Input type="number" step="0.01" min="0.01" placeholder="Jarak (meter)" :value="point.distance_m || ''"
                   @input="(e: Event) => updateDepthPointDistance(index, (e.target as HTMLInputElement).value)"
-                  class="w-32"
-                />
+                  class="w-32" />
                 <Button variant="ghost" size="sm" @click="removeDepthPoint(index)">
                   <X class="w-3 h-3" />
                 </Button>
               </div>
               <p v-if="depthMeasurementPoints.length < 3" class="text-sm text-amber-600">Minimal 3 titik pengukuran</p>
             </div>
-            
+
             <div class="flex gap-2">
-              <Button variant="default" :disabled="depthBusy || depthMeasurementPoints.length < 3 || depthMeasurementPoints.some(p => p.distance_m <= 0)" @click="createDepthScaleFromPreview">
+              <Button variant="default"
+                :disabled="depthBusy || depthMeasurementPoints.length < 3 || depthMeasurementPoints.some(p => p.distance_m <= 0)"
+                @click="createDepthScaleFromPreview">
                 <Loader2 v-if="depthBusy" class="w-4 h-4 mr-1 animate-spin" />
                 <CheckCircle v-else class="w-4 h-4 mr-1" />
                 Hitung & Aktifkan Skala
               </Button>
-              <Button variant="outline" @click="depthPreview = null; depthPreviewImage = null; depthMeasurementPoints = []; updateStepStatus()">
+              <Button variant="outline"
+                @click="depthPreview = null; depthPreviewImage = null; depthMeasurementPoints = []; updateStepStatus()">
                 <RotateCcw class="w-3 h-3 mr-1" />
                 Ulangi
               </Button>
             </div>
           </div>
-          
+
           <!-- Active Depth Scale -->
           <div v-else-if="hasDepthScale" class="space-y-4">
             <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -834,9 +844,13 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
                 <div><span class="text-gray-600">Model:</span> {{ depthScale!.depth_model }}</div>
                 <div><span class="text-gray-600">Scale (s):</span> {{ depthScale!.scale_s?.toFixed(6) }}</div>
                 <div><span class="text-gray-600">Offset (b):</span> {{ depthScale!.offset_b?.toFixed(3) }} m</div>
-                <div><span class="text-gray-600">Clip:</span> {{ depthScale!.clip_min_m }}–{{ depthScale!.clip_max_m }} m</div>
-                <div><span class="text-gray-600">Mean Residual:</span> {{ depthScale!.mean_residual_m?.toFixed(3) }} m</div>
-                <div><span class="text-gray-600">Max Residual:</span> {{ depthScale!.max_residual_m?.toFixed(3) }} m</div>
+                <div><span class="text-gray-600">Clip:</span> {{ depthScale!.clip_min_m }}–{{ depthScale!.clip_max_m }}
+                  m
+                </div>
+                <div><span class="text-gray-600">Mean Residual:</span> {{ depthScale!.mean_residual_m?.toFixed(3) }} m
+                </div>
+                <div><span class="text-gray-600">Max Residual:</span> {{ depthScale!.max_residual_m?.toFixed(3) }} m
+                </div>
               </div>
             </div>
             <Button variant="outline" @click="redoDepthScale">
@@ -844,10 +858,12 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
               Buat Ulang Skala
             </Button>
           </div>
-          
+
           <!-- No depth scale yet -->
           <div v-else class="space-y-4">
-            <p class="text-gray-500 text-center py-8">Belum ada skala kedalaman. Klik "Jalankan YOLO Depth" untuk memulai.</p>
+            <p class="text-gray-500 text-center py-8">Belum ada skala kedalaman. Klik "Jalankan YOLO Depth" untuk
+              memulai.
+            </p>
           </div>
         </div>
       </CardContent>
@@ -858,9 +874,12 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
       <CardHeader class="pb-2" @click="toggleCollapse('prediction')" style="cursor: pointer;">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <component :is="stepIcons.prediction" :class="isStepDone('prediction') ? 'text-green-600' : isStepActive('prediction') ? 'text-blue-600' : 'text-gray-400'" class="w-5 h-5" />
+            <component :is="stepIcons.prediction"
+              :class="isStepDone('prediction') ? 'text-green-600' : isStepActive('prediction') ? 'text-blue-600' : 'text-gray-400'"
+              class="w-5 h-5" />
             <CardTitle class="text-lg">Langkah 4: Prediksi Volume Sampah</CardTitle>
-            <Badge :variant="isStepDone('prediction') ? 'default' : isStepActive('prediction') ? 'secondary' : 'outline'">
+            <Badge
+              :variant="isStepDone('prediction') ? 'default' : isStepActive('prediction') ? 'secondary' : 'outline'">
               {{ isStepDone('prediction') ? 'Selesai ✓' : isStepActive('prediction') ? 'Proses' : 'Siap' }}
             </Badge>
           </div>
@@ -881,45 +900,47 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
             <li v-else>✅ Skala kedalaman aktif</li>
           </ul>
         </div>
-        
+
         <div v-else class="space-y-4">
           <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
             <p class="font-medium text-green-800">Semua Prasyarat Terpenuhi</p>
             <p class="text-sm text-green-700">Siap menjalankan analisis volume sampah</p>
           </div>
-          
+
           <div>
             <Label class="block mb-2">Sumber Gambar (RTSP Prioritas)</Label>
             <div class="space-y-2">
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="predictionSource" value="rtsp_frame" name="pred_source" :disabled="streamStatus !== 'online'">
-                <span class="flex items-center gap-2">
-                  <Video class="w-4 h-4 text-blue-600" />
-                  <span>Frame RTSP Baru (Live) — capture saat eksekusi</span>
-                </span>
+                <input type="radio" v-model="predictionSource" value="rtsp_frame" name="pred_source"
+                  :disabled="streamStatus !== 'online'">
+                  <span class="flex items-center gap-2">
+                    <Video class="w-4 h-4 text-blue-600" />
+                    <span>Frame RTSP Baru (Live) — capture saat eksekusi</span>
+                  </span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="predictionSource" value="latest_rtsp" name="pred_source" :disabled="streamStatus !== 'online'">
-                <span class="flex items-center gap-2">
-                  <ImageIcon class="w-4 h-4 text-blue-600" />
-                  <span>Snapshot RTSP Terbaru — gambar tersimpan terakhir</span>
-                </span>
+                <input type="radio" v-model="predictionSource" value="latest_rtsp" name="pred_source"
+                  :disabled="streamStatus !== 'online'">
+                  <span class="flex items-center gap-2">
+                    <ImageIcon class="w-4 h-4 text-blue-600" />
+                    <span>Snapshot RTSP Terbaru — gambar tersimpan terakhir</span>
+                  </span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="radio" v-model="predictionSource" value="upload" name="pred_source">
-                <span class="flex items-center gap-2">
-                  <Upload class="w-4 h-4 text-gray-600" />
-                  <span>Unggah Gambar (fallback jika tidak ada RTSP)</span>
-                </span>
+                  <span class="flex items-center gap-2">
+                    <Upload class="w-4 h-4 text-gray-600" />
+                    <span>Unggah Gambar (fallback jika tidak ada RTSP)</span>
+                  </span>
               </label>
             </div>
           </div>
-          
+
           <div v-if="predictionSource === 'upload'" class="space-y-2">
             <input type="file" @change="handlePredictionFileChange" accept="image/*" class="input w-full" />
             <p class="text-sm text-gray-500">File: {{ predictionUploadFileName }}</p>
           </div>
-          
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Model Segmentasi</Label>
@@ -938,18 +959,15 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
               <Input v-model.number="predictionParams.volume_min_pts_per_cell" type="number" min="1" max="10" />
             </div>
           </div>
-          
-          <Button 
-            variant="default" 
+
+          <Button variant="default"
             :disabled="!hasApiKey || !getApiKey() || predictionBusy || (predictionSource === 'upload' && !hasPredictionUploadFile)"
-            @click="runPredictionJob"
-            class="w-full"
-          >
+            @click="runPredictionJob" class="w-full">
             <Loader2 v-if="predictionBusy" class="w-4 h-4 mr-1 animate-spin" />
             <Zap v-else class="w-4 h-4 mr-1" />
             Jalankan Prediksi
           </Button>
-          
+
           <div v-if="predictionJob" class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p class="font-medium text-blue-800">Job Prediksi: {{ predictionJob.id.slice(0, 8) }}...</p>
             <p class="text-sm text-blue-700">Status: {{ predictionJob.status }}</p>
