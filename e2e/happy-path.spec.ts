@@ -69,6 +69,7 @@ for (const view of [
   { route: 'predictions', title: 'Analisis Sampah', action: 'Jalankan Prediksi Baru', columns: [] },
 ]) {
   test(`${view.title}: empty camera scope disables creation`, async ({ page }) => {
+    test.skip(view.route !== 'predictions', 'Halaman khusus kalibrasi/referensi lama sudah digabung ke CalibrationUnified; hanya /dashboard/predictions yang masih hidup.')
     await installApiFixture(page, true)
     await page.goto(`/dashboard/${view.route}`)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(view.title)

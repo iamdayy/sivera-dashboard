@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { apiOrigin, camera, depthScale, groundModel, groundRef, installApiFixture } from './fixtures/api'
 
+// Form skala kedalaman khusus lama sudah digabung ke CalibrationUnified (/dashboard/depth-scales);
+// spek ini menarget UI lama yang sudah tidak ada.
+test.skip(true, 'UI halaman /dashboard/depth-scales lama sudah digabung ke CalibrationUnified; spek menarget halaman lama yang dihapus.')
+
 for (const width of [390, 768, 1280]) {
   test(`uploaded depth image is sent with its measurements at ${width}px (mock API)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })

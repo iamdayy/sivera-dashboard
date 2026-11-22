@@ -31,6 +31,11 @@ const routes = [
         component: () => import('@/views/Dashboard/Cameras.vue')
       },
       {
+        path: 'predictions',
+        name: 'Predictions',
+        component: () => import('@/views/Dashboard/Predictions.vue')
+      },
+      {
         path: 'cameras/:id/calibration',
         name: 'CameraCalibration',
         component: () => import('@/views/Dashboard/CalibrationUnified.vue'),
@@ -43,18 +48,21 @@ const routes = [
       }
     ]
   },
-  // Redirect old routes to cameras page
+  // Legacy section paths render the unified calibration workflow (camera via ?camera=).
   {
     path: '/dashboard/calibrations',
-    redirect: '/dashboard/cameras'
+    name: 'Calibrations',
+    component: () => import('@/views/Dashboard/CalibrationUnified.vue')
   },
   {
     path: '/dashboard/ground-references',
-    redirect: '/dashboard/cameras'
+    name: 'GroundReferences',
+    component: () => import('@/views/Dashboard/CalibrationUnified.vue')
   },
   {
     path: '/dashboard/depth-scales',
-    redirect: '/dashboard/cameras'
+    name: 'DepthScales',
+    component: () => import('@/views/Dashboard/CalibrationUnified.vue')
   }
 ]
 

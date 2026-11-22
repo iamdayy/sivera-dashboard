@@ -17,7 +17,7 @@ import { useApiStore } from '@/stores/api'
 import type { Calibration, Camera, DepthScale, DepthScaleCreate, DepthScalePreviewResponse, GroundModel, GroundReference, PredictionJob, SubmitPredictionPayload } from '@/types'
 import { AlertCircle, Brain, Camera as CameraIcon, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Eye, Image as ImageIcon, Loader2, MapPin, RotateCcw, Settings, Upload, Video, X, Zap } from '@lucide/vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,9 +25,17 @@ const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const apiStore = useApiStore()
 const { getApiKey, hasApiKey, busy: scopeBusy, isActive } = useConnectionScope()
 
-const cameraId = computed(() => route.params.id as string)
+const cameraId = computed(() => (route.params.id as string) || (route.query.camera as string) || '')
 const camera = ref<Camera | null>(null)
+const cameraError = ref('')
 const streamStatus = ref<'disabled' | 'idle' | 'online' | 'offline' | 'unknown'>('unknown')
+
+const pageTitle = computed(() => {
+  if (route.name === 'Calibrations') return 'Manajemen Kalibrasi'
+  if (route.name === 'GroundReferences') return 'Referensi Tanah'
+  if (route.name === 'DepthScales') return 'Skala Kedalaman'
+  return 'Kalibrasi Kamera'
+})
 
 // Step states
 type StepStatus = 'pending' | 'active' | 'done'
@@ -167,9 +175,7 @@ async function loadCamera() {
     const status = await getCameraStreamStatus(cameraId.value)
     streamStatus.value = status.status as 'disabled' | 'idle' | 'online' | 'offline' | 'unknown'
   } catch (error) {
-    console.error('Failed to load camera:', error)
-    toastError('Error', { description: 'Gagal memuat kamera' })
-    router.push('/dashboard/cameras')
+    cameraError.value = normalizeApiError(error).message
   }
 }
 
@@ -526,6 +532,11 @@ watch([activeCalibration, activeGroundModel, depthScale, predictionJob], updateS
 
 <template>
   <div class="space-y-6 max-w-6xl mx-auto px-4 py-6">
+    <h1 class="text-xl font-semibold text-text">{{ pageTitle }}</h1>
+    <div v-if="cameraError" class="card flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" role="alert">
+      <p class="text-sm text-negative">Gagal memuat kamera: {{ cameraError }}</p>
+      <RouterLink to="/dashboard/cameras" class="btn btn-outline min-h-11 shrink-0">Buka Manajemen Kamera</RouterLink>
+    </div>
     <!-- Camera Header -->
     <div v-if="camera" class="card">
       <CardHeader class="flex flex-row items-center justify-between pb-4">

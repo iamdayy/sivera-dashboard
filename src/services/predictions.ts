@@ -82,6 +82,15 @@ export function getOutputPath(cameraId: string, jobId: string, outputType: strin
   return cameraPath(cameraId, `/predict/${encodeURIComponent(jobId)}/outputs/${encodeURIComponent(outputType)}`)
 }
 
+export async function getPredictionOutputBlob(cameraId: string, jobId: string, outputType: string, signal?: AbortSignal): Promise<Blob> {
+  try {
+    const response = await apiClient.get<Blob>(getOutputPath(cameraId, jobId, outputType), { responseType: 'blob', signal })
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
+}
+
 export async function getPredictionInstances(cameraId: string, jobId: string): Promise<DetectedInstance[]> {
   try {
     const response = await apiClient.get<DetectedInstance[]>(cameraPath(cameraId, `/predict/${jobId}/instances`))

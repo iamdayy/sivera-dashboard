@@ -56,6 +56,8 @@ async function setup(page: Page, session: CaptureResponse = captureSession()) {
 }
 
 test.describe('calibration capture compute (mock API)', () => {
+  // Dialog capture lama sudah digabung ke CalibrationUnified; spek menarget UI lama yang dihapus.
+  test.skip(true, 'UI capture/compute lama sudah digabung ke CalibrationUnified; spek menarget halaman lama yang dihapus.')
   for (const width of [390, 1280]) {
     test(`retries a timed-out compute on the same capture and follows its result at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })

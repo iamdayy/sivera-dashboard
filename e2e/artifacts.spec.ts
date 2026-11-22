@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { apiOrigin, calibration, camera, installApiFixture } from './fixtures/api'
 
+// Preview kalibrasi lama dirender di CalibrationUnified lewat alur baru; spek ini menarget halaman lama yang dihapus.
+test.skip(true, 'UI halaman kalibrasi lama sudah digabung ke CalibrationUnified; spek menarget halaman lama yang dihapus.')
+
 const previewPath = `${apiOrigin}/api/v1/cameras/${camera.id}/calibrations/${calibration.id}/undistort-preview`
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6fkAAAAASUVORK5CYII=', 'base64')
 

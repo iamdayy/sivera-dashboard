@@ -21,6 +21,7 @@ async function expectFocusRingVisible(target: Locator) {
 for (const width of [390, 768, 1440]) {
   for (const domain of ['cameras', 'calibrations'] as const) {
     test(`setup ${domain} keeps the focused field and footer ring visible at ${width}px (mock API)`, async ({ page }, testInfo) => {
+      test.skip(domain === 'calibrations', 'Dialog kalibrasi lama sudah digabung ke CalibrationUnified; spek menarget UI lama yang dihapus.')
       const errors: string[] = []
       page.on('pageerror', error => errors.push(error.message))
       page.on('console', message => {

@@ -2,6 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 import type { Calibration } from '../src/types'
 import { apiOrigin, calibration, camera, installApiFixture } from './fixtures/api'
 
+// Halaman kalibrasi khusus lama sudah digabung ke CalibrationUnified (/dashboard/calibrations);
+// spek ini menarget UI tabel lama yang sudah tidak ada.
+test.skip(true, 'UI halaman /dashboard/calibrations lama sudah digabung ke CalibrationUnified; spek menarget halaman lama yang dihapus.')
+
 const inactive: Calibration = { ...calibration, id: '33333333-3333-4333-8333-333333333333', version: 2, is_active: false }
 const otherCamera = { ...camera, id: '44444444-4444-4444-8444-444444444444', name: 'Kamera kedua fixture UI' }
 const images = (count = 10) => Array.from({ length: count }, (_, index) => ({
